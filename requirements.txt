@@ -1,0 +1,9 @@
+flask
+flask_socketio
+flask_cors
+numpy
+torch
+tensorboardX
+requests
+pymunk
+pygame

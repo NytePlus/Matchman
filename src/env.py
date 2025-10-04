@@ -224,14 +224,17 @@ def set_motor_rates(motors, rates):
         motors[name].rate = rate
 
 class MatchmanEnv():
-    def __init__(self, rewards):
-        pygame.init()
-        self.screen = pygame.display.set_mode((800, 600))
-        self.clock = pygame.time.Clock()
-        self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+    def __init__(self, rewards, draw = False):
         self.rewards = rewards
         self._running = False
         self.space = None
+        self.draw = draw
+
+        if draw:
+            pygame.init()
+            self.screen = pygame.display.set_mode((800, 600))
+            self.clock = pygame.time.Clock()
+            self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
 
     def reset(self):
         self._running = True
@@ -247,17 +250,18 @@ class MatchmanEnv():
         return self._running
 
     def step(self, action):
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self._running = False
-                pygame.quit()
-                return None, None, None
 
-        self.screen.fill((255, 255, 255))
-        self.space.debug_draw(self.draw_options)
-        pygame.display.flip()
+        if self.draw:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self._running = False
+                    pygame.quit()
+                    return None, None, None
+            self.screen.fill((255, 255, 255))
+            self.space.debug_draw(self.draw_options)
+            pygame.display.flip()
+            self.clock.tick(6000)
         self.space.step(1/60)
-        self.clock.tick(6000)
 
         set_motor_rates(self.motors, action)
 

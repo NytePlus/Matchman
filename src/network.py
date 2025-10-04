@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from tensorboardX import SummaryWriter
-from env import pack_state
 
 def init_weights(m):
     if isinstance(m, nn.Linear):
@@ -85,7 +84,7 @@ class DDPG():
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr)
 
         self.replay_buffer = ReplayBuffer()
-        self.workspace = './'
+        self.workspace = './ckpt'
         self.writer = SummaryWriter(self.workspace + 'logs/' + name)
         self.critic_update_iter = 0
         self.actor_update_iter = 0
