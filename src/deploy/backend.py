@@ -12,7 +12,7 @@ class Backend:
         self.socketio = SocketIO(self.app, cors_allowed_origins=["*"])
         self.lock = Lock()
         self.lock.acquire()  # 初始锁定，等待客户端连接
-        self.tensorboard_url = 'http://127.0.0.1:6006'
+        self.tensorboard_url = 'http://0.0.0.0:6006'
         
         self._setup_socket_events()
         self._setup_tensorboard_proxy()
@@ -118,14 +118,14 @@ class TensorboardDaemon(Thread):
             None, 
             '--logdir', self.log_dir, 
             '--port', '6006',
-            '--host', '127.0.0.1',
+            '--host', '0.0.0.0',
             '--reload_interval', '5',
         ])
         url = tb.launch()
         print(f'TensorBoard started at {url}')
 
 if __name__ == '__main__':
-    backend = Backend(debug=False, port=5000)
+    backend = Backend(host='0.0.0.0', debug=False, port=5000)
     monitor = TrainingMonitor(backend, max_fps=30)
 
     agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01, name = 'cpu 0.01 noise, 0.001 init')
