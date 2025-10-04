@@ -126,7 +126,7 @@ class TensorboardDaemon(Thread):
         print(f'TensorBoard started at {url}')
 
 if __name__ == '__main__':
-    backend = Backend(host='0.0.0.0', debug=False, port=5000)
+    backend = Backend(host='127.0.0.1', debug=False, port=5000)
     monitor = TrainingMonitor(backend, max_fps=30)
 
     agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01, name = 'cpu 0.01 noise, 0.001 init')

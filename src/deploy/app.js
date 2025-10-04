@@ -22,7 +22,7 @@ class TrainingVisualizer {
     }
 
     setupSocket() {
-        this.socket = io('https://matchman.onrender.com', {
+        this.socket = io('http://127.0.0.1:5000', {
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
