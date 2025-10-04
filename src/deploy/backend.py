@@ -19,6 +19,15 @@ class Backend:
         self.host = host
         self.port = port
         self.debug = debug
+
+    def _setup_health_check(self):
+        @app.route('/')
+        def home():
+            return jsonify({
+                "status": "success", 
+                "message": "RL Training Backend is running",
+                "service": "Reinforcement Learning Training Monitor"
+            })
     
     def _setup_socket_events(self):
         """设置SocketIO事件处理器"""
