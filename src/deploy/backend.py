@@ -80,7 +80,7 @@ class Backend:
     
     def run(self):
         """运行后端服务器"""
-        self.socketio.run(self.app, host=self.host, port=self.port, debug=self.debug)
+        self.socketio.run(self.app, allow_unsafe_werkzeug=True, host=self.host, port=self.port, debug=self.debug)
 
 class TrainingMonitor:
     def __init__(self, target, max_fps=60):

@@ -7,3 +7,4 @@ tensorboardX
 requests
 pymunk
 pygame
+tensorboard
