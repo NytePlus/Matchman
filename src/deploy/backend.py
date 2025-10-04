@@ -10,8 +10,6 @@ class Backend:
     def __init__(self, host='127.0.0.1', port=5000, debug=False):
         self.app = Flask(__name__)
         self.socketio = SocketIO(self.app, cors_allowed_origins=["*"])
-        self.lock = Lock()
-        self.lock.acquire()  # 初始锁定，等待客户端连接
         self.tensorboard_url = 'http://0.0.0.0:6006'
         
         self._setup_socket_events()
@@ -21,7 +19,7 @@ class Backend:
         self.debug = debug
 
     def _setup_health_check(self):
-        @app.route('/')
+        @self.app.route('/')
         def home():
             return jsonify({
                 "status": "success", 
@@ -34,12 +32,10 @@ class Backend:
         @self.socketio.on('connect')
         def handle_connect():
             print('Client connected')
-            self.lock.release()  # 客户端连接后释放锁
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
             print('Client disconnected')
-            self.lock.acquire()  # 客户端断开后重新锁定
 
     def _setup_tensorboard_proxy(self):
         """设置 TensorBoard 数据代理路由"""
@@ -80,13 +76,6 @@ class Backend:
                 print(f"获取 TensorBoard 标量数据失败: {e}")
                 return jsonify({'error': str(e)}), 500
     
-    def wait_for_client(self):
-        """等待客户端连接"""
-        print("Waiting for client connection...")
-        self.lock.acquire()  # 阻塞直到客户端连接
-        self.lock.release()  # 立即释放以便后续使用
-        print("Client connected, starting training...")
-    
     def run(self):
         """运行后端服务器"""
         self.socketio.run(self.app, allow_unsafe_werkzeug=True, host=self.host, port=self.port, debug=self.debug)
@@ -108,10 +97,13 @@ class TrainingMonitor:
         if elapsed < self.min_interval:
             time.sleep(self.min_interval - elapsed)
         
-        with self.target.lock:
+        try:
             self.last_send_time = current_time
             self.target.socketio.emit('training_update', data)
             return True
+        except Exception as e:
+            print(f"发送训练数据失败: {e}")
+            return False
         
 class TensorboardDaemon(Thread):
     def __init__(self, log_dir):
