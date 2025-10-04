@@ -131,7 +131,7 @@ class TrainingVisualizer {
         this.ctx.fill();
     }
 
-    drawBodySegment(positionA, positionB, color, bodyPart) {
+    drawBodySegment(positionA, positionB, color) {
         // 设置线条样式
         this.ctx.strokeStyle = color;
         this.ctx.lineWidth = 3;
@@ -146,9 +146,6 @@ class TrainingVisualizer {
         // 绘制端点
         this.drawEndpoint(positionA, color);
         this.drawEndpoint(positionB, color);
-        
-        // 绘制标签
-        // this.drawBodyPartLabel(bodyPart, positionA, positionB, color);
     }
 
     isValidPosition(pos) {
@@ -166,20 +163,16 @@ class TrainingVisualizer {
         this.ctx.fill();
     }
 
-    drawBodyPartLabel(bodyPart, positionA, positionB, color) {
-        const midX = (positionA.x + positionB.x) / 2;
-        const midY = (positionA.y + positionB.y) / 2;
-        
-        this.ctx.fillStyle = color;
-        this.ctx.font = '12px Arial';
-        this.ctx.textAlign = 'center';
-        this.ctx.fillText(bodyPart, midX, midY - 10);
-    }
-
     startAnimation() {
         const animate = () => {
             // 这里可以添加一些持续的动画效果
             // 比如背景网格、参考线等
+            this.ctx.lineWidth = 1;
+            this.ctx.fillStyle = "black";
+            this.ctx.beginPath();
+            this.ctx.moveTo(-100, 500);
+            this.ctx.lineTo(1000, 500);
+            this.ctx.stroke();
             
             requestAnimationFrame(animate);
         };

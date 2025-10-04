@@ -6,10 +6,15 @@ import torch.nn.functional as F
 import torch.optim as optim
 from tensorboardX import SummaryWriter
 
-def init_weights(m):
-    if isinstance(m, nn.Linear):
-        nn.init.normal_(m.weight, mean=0.0, std=0.001)
-        nn.init.zeros_(m.bias)
+class WeightInitializer:
+    def __init__(self, mean=0.0, std=0.1):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.normal_(m.weight, mean=self.mean, std=self.std)
+            nn.init.zeros_(m.bias)
 
 class MatchmanActor(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, scale = 1):
@@ -73,7 +78,7 @@ class DDPG():
         super().__init__()
 
         self.actor = MatchmanActor(state_size, hidden_size, action_size).to(device)
-        self.actor.apply(init_weights)
+        self.actor.apply(WeightInitializer())
         self.actor_target = MatchmanActor(state_size, hidden_size, action_size).to(device)
         self.actor_target.load_state_dict(self.actor.state_dict())
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr)

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>火柴人</title>
+    <title></title>
     <style>
         body {
             margin: 0;
@@ -19,7 +19,7 @@
         }
         canvas {
             border: 2px solid #ddd;  /* 边框改为浅灰色 */
-            background-color: #f8f8f8;  /* 画板背景设为略灰色 */
+            background-color: white;  /* 画板背景设为白色色 */
         }
         .status {
             margin-top: 10px;
@@ -31,7 +31,9 @@
 <body>
     <div class="container">
         <h1>一个火柴人尝试站起来</h1>
-        <canvas id="trainingCanvas" width="800" height="600"></canvas>
+        <div padding="70px 0;">
+            <canvas id="trainingCanvas" width="800" height="800"></canvas>
+        </div>
         <div class="status">
             <div>训练后端: <span id="connectionStatus">未连接</span></div>
         </div>

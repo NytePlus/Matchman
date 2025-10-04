@@ -1,6 +1,7 @@
 import time
+import requests
 
-from flask import Flask, render_template
+from flask import Flask, jsonify, request
 from flask_socketio import SocketIO
 from threading import Lock, Thread
 from src.main import *
@@ -11,8 +12,10 @@ class Backend:
         self.socketio = SocketIO(self.app, cors_allowed_origins=["*"])
         self.lock = Lock()
         self.lock.acquire()  # 初始锁定，等待客户端连接
+        self.tensorboard_url = 'http://127.0.0.1:6006'
         
         self._setup_socket_events()
+        self._setup_tensorboard_proxy()
         self.host = host
         self.port = port
         self.debug = debug
@@ -28,6 +31,45 @@ class Backend:
         def handle_disconnect():
             print('Client disconnected')
             self.lock.acquire()  # 客户端断开后重新锁定
+
+    def _setup_tensorboard_proxy(self):
+        """设置 TensorBoard 数据代理路由"""
+        
+        @self.app.route('/tensorboard/tags')
+        def get_tensorboard_tags():
+            """获取 TensorBoard 标量标签"""
+            try:
+                response = requests.get(f"{self.tensorboard_url}/data/plugin/scalars/tags", timeout=5)
+                response.raise_for_status()
+                data = response.json()
+                return jsonify({'tags': list(data.keys())})
+            except Exception as e:
+                print(f"获取 TensorBoard 标签失败: {e}")
+                return jsonify({'tags': []})
+        
+        @self.app.route('/tensorboard/scalars')
+        def get_tensorboard_scalars():
+            """获取 TensorBoard 标量数据"""
+            try:
+                tag = request.args.get('tag', '')
+                if not tag:
+                    return jsonify({'error': '缺少 tag 参数'}), 400
+                
+                url = f"{self.tensorboard_url}/data/plugin/scalars/scalars"
+                params = {
+                    'tag': tag,
+                    'run': '.',
+                    'format': 'json'
+                }
+                
+                response = requests.get(url, params=params, timeout=5)
+                response.raise_for_status()
+                data = response.json()
+                
+                return jsonify(data)
+            except Exception as e:
+                print(f"获取 TensorBoard 标量数据失败: {e}")
+                return jsonify({'error': str(e)}), 500
     
     def wait_for_client(self):
         """等待客户端连接"""
@@ -55,12 +97,32 @@ class TrainingMonitor:
         
         # 如果距离上次发送时间太短，则跳过
         if elapsed < self.min_interval:
-            return False
+            time.sleep(self.min_interval - elapsed)
         
         with self.target.lock:
             self.last_send_time = current_time
             self.target.socketio.emit('training_update', data)
             return True
+        
+class TensorboardDaemon(Thread):
+    def __init__(self, log_dir):
+        super().__init__()
+        self.log_dir = log_dir
+        self.daemon = True
+    
+    def run(self):
+        from tensorboard import program
+        
+        tb = program.TensorBoard()
+        tb.configure(argv=[
+            None, 
+            '--logdir', self.log_dir, 
+            '--port', '6006',
+            '--host', '127.0.0.1',
+            '--reload_interval', '5',
+        ])
+        url = tb.launch()
+        print(f'TensorBoard started at {url}')
 
 if __name__ == '__main__':
     backend = Backend(debug=False, port=5000)
@@ -72,4 +134,5 @@ if __name__ == '__main__':
 
     print('Starting backend server...')
     Thread(target=trainer.train).start()
+    TensorboardDaemon(log_dir=agent.workspace + 'logs').start()
     backend.run()

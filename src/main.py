@@ -23,7 +23,7 @@ def parse_arguments():
 
 if __name__ == "__main__":
     args = parse_arguments()
-    agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01, name = 'cpu 0.01 noise, 0.001 init')
+    agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01, name = 'test')
     env = MatchmanEnv([stand_reward], args.draw)
 
     trainer = Trainer(env, agent, num_epochs, max_steps_per_epoch)
