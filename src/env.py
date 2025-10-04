@@ -6,6 +6,7 @@ import numpy as np
 MATCHMAN_CATEGORY = 0b0001
 GROUND_CATEGORY = 0b0010
 
+# --- env-network protocol ---
 def pack_state(state_dict : dict):
     state = []
     for key, value in state_dict.items():
@@ -31,6 +32,7 @@ def unpack_action(action : np.array):
     }
     return action_dict
 
+# --- env initialization ---
 def create_ground(space):
     ground = pymunk.Segment(space.static_body, (-100, 500), (1000, 500), 5)
     ground.friction = 1.0
@@ -57,7 +59,6 @@ def create_segment(space, pos, mass, a, b, fric=0.7, radius=3):
     space.add(body, shape)
 
     return body
-
 
 def create_matchman(space, pos):
     # 躯干
@@ -171,6 +172,19 @@ def create_matchman(space, pos):
     right_foreleg_motor = pymunk.SimpleMotor(right_leg_body, right_foreleg_body, 0)
     space.add(right_foreleg_motor)
 
+    bodys = {
+        "torso": torso_body,
+        "head": head_body,
+        "left_arm": left_arm_body,
+        "left_forearm": left_forearm_body,
+        "right_arm": right_arm_body,
+        "right_forearm": right_forearm_body,
+        "left_leg": left_leg_body,
+        "left_foreleg": left_foreleg_body,
+        "right_leg": right_leg_body,
+        "right_foreleg": right_foreleg_body,
+    }
+
     motors = {
         "head": head_motor,
         "left_arm": left_arm_motor,
@@ -182,53 +196,82 @@ def create_matchman(space, pos):
         "right_leg": right_leg_motor,
         "right_foreleg": right_foreleg_motor,
     }
-    return motors
+    return motors, bodys
+
+# -- env runtime ---
+def get_body_endpoints(body):
+    def get_segment_endpoints(body, segment_shape):
+            world_a = body.local_to_world(segment_shape.a)
+            world_b = body.local_to_world(segment_shape.b)
+            return world_a, world_b
+
+    def get_circle_endpoints(body, circle_shape):
+        radius = circle_shape.radius
+        world_a = body.local_to_world(pymunk.Vec2d(-radius, 0) + circle_shape.offset)
+        world_b = body.local_to_world(pymunk.Vec2d(radius, 0) + circle_shape.offset)
+        return world_a, world_b
+    
+    shapes = [s for s in body.shapes]
+    shape = shapes[0]
+    if isinstance(shape, pymunk.Segment):
+        return get_segment_endpoints(body, shape)
+    elif isinstance(shape, pymunk.Circle):
+        return get_circle_endpoints(body, shape)
+    else:
+        raise ValueError("Unsupported shape type for body endpoints")
+
+def get_body_states(bodys):
+    states = {}
+    for name, body in bodys.items():
+        a, b = get_body_endpoints(body)
+
+        states[name] = {
+            "position_a": a,
+            "position_b": b,
+        }
+    return states
 
 def get_joint_states(motors):
     states = {}
     for name, motor in motors.items():
-        body_a, body_b = motor.a, motor.b
+        # 获取的是下游的躯干，因为总是“身体-大臂”，“大臂-小臂”
+        body = motor.b
 
-        # 获取关节的坐标（中心点）
-        pos_a = body_a.position
-        pos_b = body_b.position
-
-        # 获取关节的速度
-        vel_a = body_a.velocity
-        vel_b = body_b.velocity
-
-        # 获取关节的角度和角速度
-        angle_a = body_a.angle
-        angle_b = body_b.angle
-        angular_vel_a = body_a.angular_velocity
-        angular_vel_b = body_b.angular_velocity
-
-        # 获取角动量
-        motor_rate = motor.rate
+        a, b = get_body_endpoints(body) # 获取关节两个端点
+        vel = body.velocity # 获取关节的速度
+        angle = body.angle 
+        angular_vel = body.angular_velocity # 获取关节的角度和角速度        
+        motor_rate = motor.rate # 获取角动量
 
         states[name] = {
-            "position_a": pos_a,
-            "position_b": pos_b,
-            "velocity_a": vel_a,
-            "velocity_b": vel_b,
-            "angle_a": angle_a,
-            "angle_b": angle_b,
-            "angular_velocity_a": angular_vel_a,
-            "angular_velocity_b": angular_vel_b,
+            "position_a": a,
+            "position_b": b,
+            "velocity_b": vel,
+            "angle_b": angle,
+            "angular_velocity_b": angular_vel,
             "motor_rate": motor_rate,
         }
+
     return states
+
+def get_states(motors, bodys):
+    return {
+        'motors': get_joint_states(motors),
+        'bodys': get_body_states(bodys),
+    }
 
 def set_motor_rates(motors, rates):
     for name, rate in rates.items():
         motors[name].rate = rate
 
+# --- env operation ---
 class MatchmanEnv():
-    def __init__(self, rewards, draw = False):
+    def __init__(self, rewards, draw = False, monitor=None):
         self.rewards = rewards
         self._running = False
         self.space = None
         self.draw = draw
+        self.monitor = monitor
 
         if draw:
             pygame.init()
@@ -242,7 +285,7 @@ class MatchmanEnv():
         self.space.gravity = (0, 200)
 
         create_ground(self.space)
-        self.motors = create_matchman(self.space, (400, 300))
+        self.motors, self.bodys = create_matchman(self.space, (400, 300))
 
         return get_joint_states(self.motors)
 
@@ -250,7 +293,6 @@ class MatchmanEnv():
         return self._running
 
     def step(self, action):
-
         if self.draw:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -264,6 +306,8 @@ class MatchmanEnv():
         self.space.step(1/60)
 
         set_motor_rates(self.motors, action)
+        if self.monitor:
+            self.monitor.send_update(get_body_states(self.bodys))
 
         next_state = get_joint_states(self.motors)
         reward = sum([r(next_state) for r in self.rewards])

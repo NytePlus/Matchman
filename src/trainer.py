@@ -1,13 +1,13 @@
 import numpy as np
+import threading
 
 from itertools import count
 from src.env import pack_state, unpack_action
 
 class Trainer:
-    def __init__(self, env, agent, num_epochs, max_steps_per_epoch, monitor=None):
+    def __init__(self, env, agent, num_epochs, max_steps_per_epoch):
         self.env = env
         self.agent = agent
-        self.monitor = monitor
 
         self.num_epochs = num_epochs
         self.max_steps_per_epoch = max_steps_per_epoch
@@ -21,8 +21,6 @@ class Trainer:
                 action = self.agent.select_action(state)
 
                 next_state, reward, done = self.env.step(unpack_action(action))
-                if self.monitor:
-                    self.monitor.send_update(next_state)
                 next_state = pack_state(next_state)
                 epoch_r += reward
                 self.agent.replay_buffer.push((state, next_state, action, np.float32(reward), np.float32(done)))
@@ -31,7 +29,7 @@ class Trainer:
 
                 if done or t >= self.max_steps_per_epoch:
                     self.agent.writer.add_scalar('epoch_r', epoch_r, global_step=epoch)
-                    if epoch % 1 == 0:
+                    if epoch % 10 == 0:
                         print(f'Epoch: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
                     epoch_r = 0
                     break
@@ -52,9 +50,6 @@ class Trainer:
                 action = self.agent.select_action(state)
 
                 next_state, reward, done = self.env.step(unpack_action(action))
-                
-                if self.monitor:
-                    self.monitor.send_update(next_state)
 
                 next_state = pack_state(next_state)
                 epoch_r += reward

@@ -5,7 +5,7 @@ from src.trainer import Trainer
 from src.network import DDPG
 from src.env import *
 
-state_size, action_size, hidden_size = 117, 9, (400, 300)
+state_size, action_size, hidden_size = 9 * 9, 9, (400, 300)
 lr, batch_size = 0.001, 64
 num_epochs, max_steps_per_epoch = 100000, 2000
 device = 'cpu'

@@ -84,7 +84,7 @@ class DDPG():
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr)
 
         self.replay_buffer = ReplayBuffer()
-        self.workspace = './ckpt'
+        self.workspace = './'
         self.writer = SummaryWriter(self.workspace + 'logs/' + name)
         self.critic_update_iter = 0
         self.actor_update_iter = 0
@@ -141,9 +141,9 @@ class DDPG():
             self.critic_update_iter += 1
 
     def save(self):
-        torch.save(self.actor.state_dict(), self.workspace + 'actor.pth')
-        torch.save(self.critic.state_dict(), self.workspace + 'critic.pth')
+        torch.save(self.actor.state_dict(), self.workspace + 'ckpt/actor.pth')
+        torch.save(self.critic.state_dict(), self.workspace + 'ckpt/critic.pth')
 
     def load(self):
-        self.actor.load_state_dict(torch.load(self.workspace + 'actor.pth'))
-        self.critic.load_state_dict(torch.load(self.workspace + 'critic.pth'))
+        self.actor.load_state_dict(torch.load(self.workspace + 'ckpt/actor.pth'))
+        self.critic.load_state_dict(torch.load(self.workspace + 'ckpt/critic.pth'))

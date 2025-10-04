@@ -1,81 +1,43 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>火柴人训练可视化</title>
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>火柴人</title>
     <style>
-        body { margin: 0; padding: 20px; background: #1a1a1a; color: white; font-family: Arial; }
-        .container { display: flex; flex-direction: column; align-items: center; }
-        canvas { background: #2d2d2d; border: 2px solid #444; }
+        body {
+            margin: 0;
+            padding: 20px;
+            background-color: white;  /* 改为纯白 */
+            color: #333;  /* 文字颜色改为深色，在白色背景上更清晰 */
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        canvas {
+            border: 2px solid #ddd;  /* 边框改为浅灰色 */
+            background-color: #f8f8f8;  /* 画板背景设为略灰色 */
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;  /* 状态文字改为灰色 */
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>火柴人走路强化学习训练</h1>
-        <div>状态: <span id="status">连接中...</span></div>
-        <canvas id="stickmanCanvas" width="800" height="400"></canvas>
+        <h1>一个火柴人尝试站起来</h1>
+        <canvas id="trainingCanvas" width="800" height="600"></canvas>
+        <div class="status">
+            <div>训练后端: <span id="connectionStatus">未连接</span></div>
+        </div>
     </div>
 
-    <script>
-        // 使用 Socket.IO 客户端
-        const socket = io('http://127.0.0.1:5000', {
-            transports: ['websocket', 'polling']
-        });
-        
-        socket.on('connect', () => {
-            console.log('✅ 已连接到服务器');
-            document.getElementById('status').textContent = '已连接';
-        });
-        
-        socket.on('training_update', (data) => {
-            console.log('收到训练数据:', data);
-            console.log("data['head']['position_a']", data['head']['position_a'])
-            console.log("data['head']['position_a'][0]", data['head']['position_a'][0])
-            // 更新可视化
-            updateVisualization(data);
-        });
-        
-        socket.on('disconnect', () => {
-            console.log('❌ 连接断开');
-            document.getElementById('status').textContent = '连接断开';
-        });
-        
-        function updateVisualization(data) {
-            // 你的可视化代码
-            const canvas = document.getElementById('stickmanCanvas');
-            const ctx = canvas.getContext('2d');
-            
-            // 清空画布
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            // 绘制火柴人逻辑
-            drawStickman(ctx, data);
-        }
-        
-        function drawStickman(ctx, data) {
-            // 根据数据绘制火柴人
-            const position = data.position || { x: 0, y: 0 };
-            const baseX = 400 + position.pos * 100;
-            const baseY = 300 - position.y * 100;
-            
-            // 绘制逻辑...
-            ctx.strokeStyle = '#4CAF50';
-            ctx.lineWidth = 3;
-            
-            // 躯干
-            ctx.beginPath();
-            ctx.moveTo(baseX, baseY - 50);
-            ctx.lineTo(baseX, baseY + 30);
-            ctx.stroke();
-            
-            // 头部
-            ctx.beginPath();
-            ctx.arc(baseX, baseY - 70, 20, 0, Math.PI * 2);
-            ctx.stroke();
-            
-            // 可以继续添加其他部位...
-        }
-    </script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="app.js"></script>
 </body>
 </html>
