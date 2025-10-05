@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from threading import Thread
 from src.deploy.backend import backend, trainer, static
 
