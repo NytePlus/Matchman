@@ -3,7 +3,7 @@ class DynamicChart {
         this.containerId = tag;
         this.chartName = chartName;
         this.xName = xName
-        this.loadUrl = `http://127.0.0.1:5000/data?run=${run}&tag=${tag}`;
+        this.loadUrl = `${BACKEND_URL}/data?run=${run}&tag=${tag}`;
 
         this.data = [];
         this.chart = null;
@@ -172,6 +172,8 @@ export const charts = {
   'epoch_r': epochRwardChart,
   'sum_step_r': stepRwardChart
 }
+
+export const BACKEND_URL = "https://matchman.onrender.com"
 
 window.addEventListener('resize', () => {
     epochRwardChart.resize();

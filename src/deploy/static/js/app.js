@@ -1,4 +1,4 @@
-import {charts} from './chart.js'
+import {charts, BACKEND_URL} from './chart.js'
 
 class TrainingVisualizer {
     constructor() {
@@ -24,7 +24,7 @@ class TrainingVisualizer {
     }
 
     setupSocket() {
-        this.socket = io('http://127.0.0.1:5000', {
+        this.socket = io(BACKEND_URL, {
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
