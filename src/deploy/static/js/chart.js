@@ -1,4 +1,4 @@
-export const BACKEND_URL = "https://matchman.onrender.com"
+export const BACKEND_URL = "http://127.0.0.1:5000"
 
 class DynamicChart {
     constructor(tag, chartName, xName, run) {
@@ -109,7 +109,6 @@ class DynamicChart {
         this.intervalId = setInterval(async () => {
             const response = await fetch(this.loadUrl + `&offset=${this.data.length}`);
             const data = await response.json();
-            console.log('数据', data)
 
             if (data) {
                 for (const item of data) {

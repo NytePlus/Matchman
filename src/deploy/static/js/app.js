@@ -44,7 +44,6 @@ class TrainingVisualizer {
         });
 
         this.socket.on('training_update', (data) => {
-            console.log(data)
             this.handleTrainingData(data);
         });
 
