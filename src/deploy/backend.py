@@ -100,16 +100,16 @@ class TrainingMonitor:
             print(f"发送训练指标失败: {e}")
             return False
 
+static = TensorboardRepository(log_dir='logs', runs = [name], tags = ['epoch_r'])
+backend = Backend(host='0.0.0.0', debug=False, port=5000, db=static)
+monitor = TrainingMonitor(backend, max_fps=30)
+
+agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01)
+env = MatchmanEnv([stand_reward], draw=False)
+writer = MultiTargetWriter([SummaryWriter('logs/' + 'test'), monitor])
+trainer = Trainer(env, agent, writer, num_epochs, max_steps_per_epoch)
+
 if __name__ == '__main__':
-    static = TensorboardRepository(log_dir='logs', runs = [name], tags = ['epoch_r'])
-    backend = Backend(host='0.0.0.0', debug=False, port=5000, db=static)
-    monitor = TrainingMonitor(backend, max_fps=30)
-
-    agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01)
-    env = MatchmanEnv([stand_reward], draw=False)
-    writer = MultiTargetWriter([SummaryWriter('logs/' + 'test'), monitor])
-    trainer = Trainer(env, agent, writer, num_epochs, max_steps_per_epoch)
-
     print('Starting backend server...')
     Thread(target=trainer.train).start()
     static.start()

@@ -8,3 +8,5 @@ requests
 pymunk==7.1.0
 pygame==2.6.1
 tensorboard==2.20.0
+gunicorn
+eventlet
