@@ -9,6 +9,3 @@ static.start()
 
 app = backend.app
 socketio = backend.socketio
-
-if __name__ == '__main__':
-    
