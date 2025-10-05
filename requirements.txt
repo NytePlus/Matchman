@@ -2,7 +2,7 @@ flask==3.1.2
 flask_socketio
 flask_cors
 numpy
-torch
+torch --index-url https://download.pytorch.org/whl/cpu
 tensorboardX==2.6.4
 requests
 pymunk==7.1.0
