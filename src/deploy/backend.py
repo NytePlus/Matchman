@@ -1,25 +1,34 @@
 import time
-import requests
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_socketio import SocketIO
+from flask_cors import CORS
 from threading import Lock, Thread
+
+from src.deploy.repository import TensorboardRepository
 from src.main import *
+from src.trainer import Trainer, MultiTargetWriter
+
+name = 'test'
 
 class Backend:
-    def __init__(self, host='127.0.0.1', port=5000, debug=False):
+    def __init__(self, host='127.0.0.1', port=5000, debug=False, db=None):
         self.app = Flask(__name__)
+        CORS(self.app)
         self.socketio = SocketIO(self.app, cors_allowed_origins=["*"])
-        self.tensorboard_url = 'http://0.0.0.0:6006'
         
-        self._setup_socket_events()
-        self._setup_tensorboard_proxy()
         self.host = host
         self.port = port
         self.debug = debug
+        self.db = db
+
+        self._setup_health_check()
+        self._setup_socket_events()
+        self._set_up_tensorboard_static()
 
     def _setup_health_check(self):
         @self.app.route('/')
+        @self.app.route('/healthz')
         def home():
             return jsonify({
                 "status": "success", 
@@ -37,45 +46,19 @@ class Backend:
         def handle_disconnect():
             print('Client disconnected')
 
-    def _setup_tensorboard_proxy(self):
-        """设置 TensorBoard 数据代理路由"""
-        
-        @self.app.route('/tensorboard/tags')
-        def get_tensorboard_tags():
-            """获取 TensorBoard 标量标签"""
-            try:
-                response = requests.get(f"{self.tensorboard_url}/data/plugin/scalars/tags", timeout=5)
-                response.raise_for_status()
-                data = response.json()
-                return jsonify({'tags': list(data.keys())})
-            except Exception as e:
-                print(f"获取 TensorBoard 标签失败: {e}")
-                return jsonify({'tags': []})
-        
-        @self.app.route('/tensorboard/scalars')
-        def get_tensorboard_scalars():
-            """获取 TensorBoard 标量数据"""
-            try:
-                tag = request.args.get('tag', '')
-                if not tag:
-                    return jsonify({'error': '缺少 tag 参数'}), 400
-                
-                url = f"{self.tensorboard_url}/data/plugin/scalars/scalars"
-                params = {
-                    'tag': tag,
-                    'run': '.',
-                    'format': 'json'
-                }
-                
-                response = requests.get(url, params=params, timeout=5)
-                response.raise_for_status()
-                data = response.json()
-                
-                return jsonify(data)
-            except Exception as e:
-                print(f"获取 TensorBoard 标量数据失败: {e}")
-                return jsonify({'error': str(e)}), 500
-    
+    def _set_up_tensorboard_static(self):
+        print('由于静态路径无法正常转发，前端不能显示，不能直接转发tensorboard前端')
+
+        @self.app.route('/data')
+        def data():
+            run = request.args.get('run', '')
+            tag = request.args.get('tag', '')
+            offset = int(request.args.get('offset', 0))
+            limit = int(request.args.get('limit', 1000))
+            
+            data = self.db.get_scalar_data(run, tag, offset, limit)
+            return jsonify(data)
+
     def run(self):
         """运行后端服务器"""
         self.socketio.run(self.app, allow_unsafe_werkzeug=True, host=self.host, port=self.port, debug=self.debug)
@@ -92,8 +75,6 @@ class TrainingMonitor:
         """发送训练数据到所有连接的客户端，带有限速"""
         current_time = time.time()
         elapsed = current_time - self.last_send_time
-        
-        # 如果距离上次发送时间太短，则跳过
         if elapsed < self.min_interval:
             time.sleep(self.min_interval - elapsed)
         
@@ -105,35 +86,31 @@ class TrainingMonitor:
             print(f"发送训练数据失败: {e}")
             return False
         
-class TensorboardDaemon(Thread):
-    def __init__(self, log_dir):
-        super().__init__()
-        self.log_dir = log_dir
-        self.daemon = True
-    
-    def run(self):
-        from tensorboard import program
-        
-        tb = program.TensorBoard()
-        tb.configure(argv=[
-            None, 
-            '--logdir', self.log_dir, 
-            '--port', '6006',
-            '--host', '0.0.0.0',
-            '--reload_interval', '5',
-        ])
-        url = tb.launch()
-        print(f'TensorBoard started at {url}')
+    def add_scalar(self, tag, scalar_value, global_step):
+        if tag not in ['sum_step_r', 'epoch_r']:
+            return False
+        try:
+            self.target.socketio.emit('training_statics', {
+                'tag': tag, 
+                'value': scalar_value, 
+                'timestamp': global_step
+            })
+            return True
+        except Exception as e:
+            print(f"发送训练指标失败: {e}")
+            return False
 
 if __name__ == '__main__':
-    backend = Backend(host='127.0.0.1', debug=False, port=5000)
+    static = TensorboardRepository(log_dir='logs', runs = [name], tags = ['epoch_r'])
+    backend = Backend(host='127.0.0.1', debug=False, port=5000, db=static)
     monitor = TrainingMonitor(backend, max_fps=30)
 
-    agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01, name = 'cpu 0.01 noise, 0.001 init')
-    env = MatchmanEnv([stand_reward], draw=False, monitor=monitor)
-    trainer = Trainer(env, agent, num_epochs, max_steps_per_epoch)
+    agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01)
+    env = MatchmanEnv([stand_reward], draw=False)
+    writer = MultiTargetWriter([SummaryWriter('logs/' + 'test'), monitor])
+    trainer = Trainer(env, agent, writer, num_epochs, max_steps_per_epoch)
 
     print('Starting backend server...')
     Thread(target=trainer.train).start()
-    TensorboardDaemon(log_dir=agent.workspace + 'logs').start()
+    static.start()
     backend.run()

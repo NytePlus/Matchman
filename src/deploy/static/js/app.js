@@ -1,3 +1,5 @@
+import {charts} from './chart.js'
+
 class TrainingVisualizer {
     constructor() {
         this.canvas = document.getElementById('trainingCanvas');
@@ -42,8 +44,17 @@ class TrainingVisualizer {
         });
 
         this.socket.on('training_update', (data) => {
+            console.log(data)
             this.handleTrainingData(data);
         });
+
+        this.socket.on('training_statics', (data) => {
+            let chart = charts[data["tag"]]
+            if(chart !== null){
+                chart.addDataPoint(data["value"], data['timestamp']);
+                chart.updateChart();
+            }
+        })
 
         this.socket.on('connect_error', (error) => {
             console.error('连接错误:', error);

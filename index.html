@@ -2,44 +2,109 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title></title>
-    <style>
-        body {
-            margin: 0;
-            padding: 20px;
-            background-color: white;  /* 改为纯白 */
-            color: #333;  /* 文字颜色改为深色，在白色背景上更清晰 */
-            font-family: Arial, sans-serif;
-        }
-        .container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        canvas {
-            border: 2px solid #ddd;  /* 边框改为浅灰色 */
-            background-color: white;  /* 画板背景设为白色色 */
-        }
-        .status {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #666;  /* 状态文字改为灰色 */
-        }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Matchman by Nyte</title>
+
+    <link href="https://fonts.googleapis.com/css?family=Google+Sans|Noto+Sans|Castoro" rel="stylesheet">
+
+    <link rel="stylesheet" href="src/deploy/static/css/bulma.min.css">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+    <link rel="stylesheet" href="src/deploy/static/css/index.css">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <script defer src="src/deploy/static/js/fontawesome.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 </head>
 <body>
+    <section class="hero">
+    <div class="hero-body">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column has-text-centered">
+            <br><br><br>
+            <h1 class="title is-1 publication-title">Matchman: 一个火柴人尝试站起来</h1>
+            <h4 class="title is-4 publication-title" style="color:#5a6268;">Developed by NyRL</h4>
+            <div class="column has-text-centered">
+              <div class="publication-links">
+                <!-- Arxiv Link. -->
+                <span class="link-block">
+                  <a href="" target="_blank" onclick="event.preventDefault();"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="ai ai-arxiv"></i>
+                    </span>
+                    <span>Arxiv (Not have)</span>
+                  </a>
+                </span>
+                <!-- Video Link. -->
+                <span class="link-block">
+                  <a href="" target="_blank" onclick="event.preventDefault();"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fab fa-youtube"></i>
+                    </span>
+                    <span>Video (Not have)</span>
+                  </a>
+                </span>
+                <!-- Code Link. -->
+                <span class="link-block">
+                  <a href="https://github.com/NytePlus/Matchman" target="_blank"
+                    class="external-link button is-normal is-rounded is-dark">
+                    <span class="icon">
+                      <i class="fab fa-github"></i>
+                    </span>
+                    <span>GitHub</span>
+                  </a>
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <br><br>
     <div class="container">
-        <h1>一个火柴人尝试站起来</h1>
-        <div padding="70px 0;">
-            <canvas id="trainingCanvas" width="800" height="800"></canvas>
+        <div>
+            <canvas id="trainingCanvas" width="550" height="550"></canvas>
         </div>
         <div class="status">
             <div>训练后端: <span id="connectionStatus">未连接</span></div>
         </div>
+        <br>
+        <p style="max-width: 1000px; margin: 00px auto; text-align: justify;">
+            <strong>我创建了一个具有真实物理引擎的pymunk沙箱，火柴人的身体由多个刚体和关节组成，基于torch搭建深度强化学习算法训练火柴人学会站立和行走。
+            </strong> 模型接受火柴人各躯干的位置和速度信息，输出每个时段给予电机的角动量。值得一提的是我的前后端都是白嫖的，感谢Github Pages的免费静态网站托管和Render的免费后端服务托管。
+        </p>
     </div>
 
+    <!-- Abstract. -->
+    <section class="section">
+    <div class="container is-max-desktop">
+        <div class="columns is-centered has-text-centered">
+            <div class="column is-four-fifths">
+                <h2 class="title is-3">Abstract</h2>
+                <div class="content has-text-justified">
+                <p>
+                    在这个工作中，我训练了一个火柴人在二维物理沙箱中学会站立和行走，并且搭建前后端来可视化训练进展。 
+                    先前的工作往往高度封装强化学习算法细节，并且环境搭建缺乏定制化方案。
+                    为了解决这个问题，我搭建了一个<strong>pymunk二维沙箱</strong>，通过带有物理属性的刚体搭建环境，极易编辑和拓展。 
+                    为了提升调试强化学习算法细节的能力，我构建了一个通用强化学习框架 <strong>NyteRL</strong>，只需要实现简单的接口即可使用自己的环境、模型、agent和奖励，这一过程收到的影响因素最少，具有极低的编程和调试成本。
+                    TODO：大量的实践表明我的方法在二维火柴人场景的表现暂时不如传统方法，在下游任务中有很大潜力。
+                </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+    <div id="epoch_r" class="chart-container"></div>
+    <div id="sum_step_r" class="chart-container"></div>
+    <script type="module" src="src/deploy/static/js/chart.js"></script>
+
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-    <script src="src/deploy/app.js"></script>
+    <script type="module" src="src/deploy/static/js/app.js"></script>
 </body>
 </html>

@@ -4,7 +4,6 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from tensorboardX import SummaryWriter
 
 class WeightInitializer:
     def __init__(self, mean=0.0, std=0.1):
@@ -74,7 +73,7 @@ class ReplayBuffer():
         return np.array(x), np.array(y), np.array(u), np.array(r),np.array(d)
 
 class DDPG():
-    def __init__(self, state_size, action_size, lr, batch_size, hidden_size, device, update_iteration = 10, noise = 0.1, tau = 0.005, gamma = 0.99, name = ''):
+    def __init__(self, state_size, action_size, lr, batch_size, hidden_size, device, update_iteration = 10, noise = 0.1, tau = 0.005, gamma = 0.99):
         super().__init__()
 
         self.actor = MatchmanActor(state_size, hidden_size, action_size).to(device)
@@ -90,7 +89,6 @@ class DDPG():
 
         self.replay_buffer = ReplayBuffer()
         self.workspace = './'
-        self.writer = SummaryWriter(self.workspace + 'logs/' + name)
         self.critic_update_iter = 0
         self.actor_update_iter = 0
         self.num_training = 0
@@ -123,14 +121,12 @@ class DDPG():
             current_Q = self.critic(state, action)
 
             critic_loss = F.mse_loss(current_Q, target_Q)
-            self.writer.add_scalar('Loss/critic_loss', critic_loss, global_step = self.critic_update_iter)
 
             self.critic_optimizer.zero_grad()
             critic_loss.backward()
             self.critic_optimizer.step()
 
             actor_loss = - self.critic(state, self.actor(state)).mean()
-            self.writer.add_scalar('Loss/actor_loss', actor_loss, global_step = self.actor_update_iter)
 
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -144,6 +140,7 @@ class DDPG():
 
             self.actor_update_iter += 1
             self.critic_update_iter += 1
+            yield critic_loss.item(), self.critic_update_iter, actor_loss.item(), self.actor_update_iter
 
     def save(self):
         torch.save(self.actor.state_dict(), self.workspace + 'ckpt/actor.pth')

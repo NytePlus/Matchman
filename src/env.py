@@ -266,12 +266,11 @@ def set_motor_rates(motors, rates):
 
 # --- env operation ---
 class MatchmanEnv():
-    def __init__(self, rewards, draw = False, monitor=None):
+    def __init__(self, rewards, draw = False):
         self.rewards = rewards
         self._running = False
         self.space = None
         self.draw = draw
-        self.monitor = monitor
 
         if draw:
             pygame.init()
@@ -306,10 +305,14 @@ class MatchmanEnv():
         self.space.step(1/60)
 
         set_motor_rates(self.motors, action)
-        if self.monitor:
-            self.monitor.send_update(get_body_states(self.bodys))
 
         next_state = get_joint_states(self.motors)
         reward = sum([r(next_state) for r in self.rewards])
         done = False
         return next_state, reward, done
+    
+    def get_state(self):
+        motor_state = get_joint_states(self.motors)
+        body_state = get_body_states(self.bodys)
+
+        return motor_state, body_state
