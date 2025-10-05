@@ -1,3 +1,5 @@
+export const BACKEND_URL = "http://localhost:5000"
+
 class DynamicChart {
     constructor(tag, chartName, xName, run) {
         this.containerId = tag;
@@ -172,8 +174,6 @@ export const charts = {
   'epoch_r': epochRwardChart,
   'sum_step_r': stepRwardChart
 }
-
-export const BACKEND_URL = "https://matchman.onrender.com"
 
 window.addEventListener('resize', () => {
     epochRwardChart.resize();
