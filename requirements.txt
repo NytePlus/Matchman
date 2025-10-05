@@ -2,12 +2,14 @@ flask==3.1.2
 flask_socketio
 flask_cors
 numpy
-torch --index-url https://download.pytorch.org/whl/cpu
 tensorboardX==2.6.4
 requests
 pymunk==7.1.0
 pygame==2.6.1
 tensorboard==2.20.0
+
+# --- 需单独安装 ---
+# torch
 
 # --- flask生产环境 ---
 # gunicorn

@@ -1,4 +1,4 @@
-export const BACKEND_URL = "https://matchman.onrender.com"
+export const BACKEND_URL = "https://ugly-remy-situ-nyte-0dc47772.koyeb.app/"
 
 class DynamicChart {
     constructor(tag, chartName, xName, run) {

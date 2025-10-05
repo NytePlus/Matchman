@@ -1,4 +1,4 @@
-FROM python:3.13.5-slim
+FROM --platform=linux/amd64 python:3.13.5-slim
 
 WORKDIR /app
 
@@ -9,8 +9,9 @@ ENV PYTHONUNBUFFERED=1
 
 COPY requirements.txt .
 
-RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY . .
 
