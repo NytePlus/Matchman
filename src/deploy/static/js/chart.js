@@ -1,4 +1,4 @@
-export const BACKEND_URL = "http://127.0.0.1:5000"
+export const BACKEND_URL = "https://matchman.onrender.com"
 
 class DynamicChart {
     constructor(tag, chartName, xName, run) {
@@ -11,7 +11,7 @@ class DynamicChart {
         this.chart = null;
         this.intervalId = null;
         this.isPlaying = false;
-        this.minT = 100000000
+        this.lastT = 0
         
         this.initChart();
     }
@@ -75,10 +75,10 @@ class DynamicChart {
     
     // 添加新数据点
     addDataPoint(value, timestamp = this.data.length) {
-        if(timestamp < this.minT){
+        if(timestamp < this.lastT){
           this.data = []
-          this.minT = timestamp
         }
+        this.lastT = timestamp
         const dataPoint = {
             name: `${this.xName} ${timestamp}`,
             value: [
@@ -134,6 +134,7 @@ class DynamicChart {
             const response = await fetch(this.loadUrl);
             const data = await response.json();
             
+            console.log(data)
             if (data) {
                 this.data = data.map(item => ({
                   name: `${this.xName} ${item["timestamp"]}`,

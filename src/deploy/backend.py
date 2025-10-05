@@ -101,7 +101,7 @@ class TrainingMonitor:
             return False
 
 static = TensorboardRepository(log_dir='logs', runs = [name], tags = ['epoch_r'])
-backend = Backend(host='127.0.0.1', debug=False, port=5000, db=static)
+backend = Backend(host='0.0.0.0', debug=False, port=5000, db=static)
 monitor = TrainingMonitor(backend, max_fps=30)
 
 agent = DDPG(state_size, action_size, lr, batch_size, hidden_size, device, noise = 0.01)
