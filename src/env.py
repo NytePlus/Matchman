@@ -291,8 +291,8 @@ class MatchmanEnv():
     def running(self):
         return self._running
 
-    def step(self, action):
-        if self.draw:
+    def step(self, action, test = False):
+        if self.draw and test:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self._running = False

@@ -35,7 +35,7 @@ class Trainer:
         self.num_epochs = num_epochs
         self.max_steps_per_epoch = max_steps_per_epoch
 
-    def train(self):
+    def train(self, print_interval = 10, save_interval = 100, test_interval = -1):
         epoch_r = 0
 
         for epoch in range(self.num_epochs):
@@ -54,21 +54,23 @@ class Trainer:
                 self.writer.add_scalar('sum_step_r', epoch_r, t)
                 if done or t >= self.max_steps_per_epoch:
                     self.writer.add_scalar('epoch_r', epoch_r, epoch)
-                    if epoch % 10 == 0:
-                        print(f'Epoch: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
+                    if epoch % print_interval == 0:
+                        print(f'Train Epoch: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
                     epoch_r = 0
                     break
 
-            if (epoch + 1) % 100 == 0:
+            if (epoch + 1) % save_interval == 0:
                 self.agent.save()
 
-            if self.agent.replay_buffer.full():
+            if self.agent.update_check():
                 for al, ai, cl, ci in self.agent.update():
                     self.writer.add_scalar('Loss/actor_loss', al, global_step = ai)
                     self.writer.add_scalar('Loss/critic_loss', cl, global_step = ci)
 
+            if test_interval != -1 and epoch % test_interval == 0:
+                self.test(1)
+
     def test(self, test_epochs = 10):
-        self.agent.load()
         epoch_r = 0
 
         for epoch in range(test_epochs):
@@ -76,7 +78,7 @@ class Trainer:
             for t in count():
                 action = self.agent.select_action(state)
 
-                next_state, reward, done = self.env.step(unpack_action(action))
+                next_state, reward, done = self.env.step(unpack_action(action), test=True)
 
                 next_state = pack_state(next_state)
                 epoch_r += reward
@@ -84,6 +86,6 @@ class Trainer:
 
                 state = next_state
                 if done or t >= self.max_steps_per_epoch:
-                    print(f'Epoch: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
+                    print(f'Test: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
                     epoch_r = 0
                     break
