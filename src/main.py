@@ -23,15 +23,24 @@ def parse_arguments():
         help='启动屏幕可视化'
     )
     
+    parser.add_argument(
+        '--tensorboard',
+        action='store_true',
+        help='启动看板'
+    )
+    
     return parser.parse_args()
 
 class TensorboardDaemon(Thread):
-    def __init__(self, log_dir):
+    def __init__(self, log_dir, lanch = True):
         super().__init__()
         self.log_dir = log_dir
         self.daemon = True
+        self.lanch = lanch
     
     def run(self):
+        if not self.lanch:
+            return
         from tensorboard import program
         
         tb = program.TensorBoard()
@@ -50,8 +59,8 @@ if __name__ == "__main__":
     agent = PPO(state_size, action_size, [lr, 0.01], batch_size, hidden_size, device)
     env = MatchmanEnv([stand_reward], args.draw)
     
-    writer = MultiTargetWriter([SummaryWriter('logs/' + 'ppo')])
+    writer = MultiTargetWriter([SummaryWriter('logs/' + 'ppo3')])
     trainer = Trainer(env, agent, writer, num_epochs, max_steps_per_epoch)
 
-    TensorboardDaemon(log_dir=agent.workspace + 'logs').start()
-    trainer.train()
+    TensorboardDaemon(agent.workspace + 'logs', args.tensorboard).start()
+    trainer.train(print_interval=1)

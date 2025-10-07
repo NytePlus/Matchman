@@ -7,7 +7,7 @@ from torch import nn
 from torch import optim
 from src.algorithms.base import RLAlgorithm
 
-class WeightInitializer:
+class NormalInitializer:
     def __init__(self, mean=0.0, std=0.1):
         self.mean = mean
         self.std = std
@@ -17,20 +17,30 @@ class WeightInitializer:
             nn.init.normal_(m.weight, mean=self.mean, std=self.std)
             nn.init.zeros_(m.bias)
 
-class MatchmanPolicy(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, std = 0.1, scale = 1):
+class XavierInitializer:
+    def __init__(self, gain=1.0):
+        self.gain = gain
+
+    def __call__(self, m):
+        if isinstance(m, nn.Linear):
+            # Xavier均匀初始化，专门为tanh设计
+            nn.init.xavier_uniform_(m.weight, gain=self.gain)
+            nn.init.zeros_(m.bias)
+
+class MatchmanPolicyContinious(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, scale = 2):
         super().__init__()
         self.l1 = nn.Linear(input_size, hidden_size[0])
         self.l2 = nn.Linear(hidden_size[0], hidden_size[1])
-        self.l3 = nn.Linear(hidden_size[1], output_size)
-        self.std = std
+        self.l_mean = nn.Linear(hidden_size[1], output_size)
+        self.l_std = nn.Linear(hidden_size[1], output_size)
         self.scale = scale
 
     def distribution(self, state):
-        x = torch.relu(self.l1(state))
-        x = torch.relu(self.l2(x))
-        mean = torch.tanh(self.l3(x)) * self.scale
-        std = torch.ones_like(mean) * self.std
+        x = torch.tanh(self.l1(state))
+        x = torch.tanh(self.l2(x))
+        mean = torch.tanh(self.l_mean(x)) * self.scale
+        std = torch.exp(self.l_std(x)).clamp(max=1.0)
 
         return dist.Normal(mean, std)
     
@@ -41,6 +51,59 @@ class MatchmanPolicy(nn.Module):
     def forward(self, state):
         dist = self.distribution(state)
         return dist.sample()
+    
+class MatchmanPolicy(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_strategy=3, epsilon=0.8):
+        super().__init__()
+        self.l1 = nn.Linear(input_size, hidden_size[0])
+        self.l2 = nn.Linear(hidden_size[0], hidden_size[1])
+        self.l3 = nn.Linear(hidden_size[1], output_size * num_strategy)
+        self.output_size = output_size
+        self.num_strategy = num_strategy
+        self.epsilon = epsilon
+
+        self.t = 1
+
+    def distribution(self, state):
+        x = torch.tanh(self.l1(state))
+        x = torch.tanh(self.l2(x))
+        logits = self.l3(x).reshape(-1, self.output_size, self.num_strategy)
+
+        return logits.clamp(-2, 1)
+    
+    def compute_prob(self, state, action):
+        logits = self.distribution(state)
+
+        log_all_prob = F.log_softmax(logits, dim=-1)
+        action_idx = (action + 1).long()
+        log_prob = log_all_prob.gather(-1, action_idx.unsqueeze(-1)).squeeze(-1)
+        
+        return torch.exp(log_prob.sum(-1))
+
+    def forward(self, state):
+        logits = self.distribution(state)
+
+        all_prob = F.softmax(logits, dim=-1)
+        action = all_prob.argmax(dim=-1) - 1
+
+        random_mask = torch.rand(*action.shape) < self.epsilon
+        random_action = torch.randint(-1, 2, action.shape)
+        action = torch.where(random_mask, random_action, action)
+        return action
+    
+    def forward1(self, state):
+        batch_size = state.shape[0] if len(state.shape) == 2 else 1
+        action = torch.ones(batch_size, self.output_size)
+
+        if self.t % 100 > 90:
+            if self.t % 200 < 100:
+                action *= -10
+            else:
+                action *= 10
+        elif self.t % 2 == 0:
+            action *= -1
+        self.t += 1
+        return action
 
 # Critic是个Q函数，Value是值函数
 class Value(nn.Module):
@@ -48,7 +111,7 @@ class Value(nn.Module):
         super().__init__()
         self.l1 = nn.Linear(state_size, hidden_size[0])
         self.l2 = nn.Linear(hidden_size[0], hidden_size[1])
-        self.l3 = nn.Linear(hidden_size[1],1)
+        self.l3 = nn.Linear(hidden_size[1], 1)
 
     def forward(self, state):
         x = torch.relu(self.l1(state))
@@ -72,7 +135,7 @@ class PPO(RLAlgorithm):
         assert tau > 0.95, "参考模型的EMA更新程度必须大于0.97，否则会出现数值稳定性问题"
 
         self.policy = MatchmanPolicy(state_size, hidden_size, action_size).to(device)
-        self.policy.apply(WeightInitializer())
+        self.policy.apply(XavierInitializer())
         self.policy_old = MatchmanPolicy(state_size, hidden_size, action_size).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         self.policy_optimizer = optim.Adam(self.policy.parameters(), lrs[0])

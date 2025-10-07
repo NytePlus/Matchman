@@ -26,6 +26,34 @@ class MultiTargetWriter:
             else:
                 pass
 
+class EpsilonScheduler:
+    def __init__(self, start_epsilon, end_epsilon, decay_epochs, model, decay_type='linear'):
+        self.start_epsilon = start_epsilon
+        self.end_epsilon = end_epsilon
+        self.decay_epochs = decay_epochs
+        self.decay_type = decay_type
+
+        self.model = model
+        self.epoch = 0
+        self.model.epsilon = self.get_epsilon(self.epoch)
+        
+    def get_epsilon(self, epoch):
+        if epoch >= self.decay_epochs:
+            return self.end_epsilon
+        
+        if self.decay_type == 'linear':
+            progress = epoch / self.decay_epochs
+            return self.start_epsilon - (self.start_epsilon - self.end_epsilon) * progress
+        elif self.decay_type == 'exponential':
+            decay_factor = (self.end_epsilon / self.start_epsilon) ** (1 / self.decay_epochs)
+            return self.start_epsilon * (decay_factor ** epoch)
+        else:
+            raise ValueError(f"Unsupported decay type: {self.decay_type}")
+        
+    def step(self):
+        self.epoch += 1
+        self.model.epsilon = self.get_epsilon(self.epoch)
+
 class Trainer:
     def __init__(self, env, agent, writer, num_epochs, max_steps_per_epoch):
         self.env = env
@@ -37,6 +65,7 @@ class Trainer:
 
     def train(self, print_interval = 10, save_interval = 100, test_interval = -1):
         epoch_r = 0
+        scheduler = EpsilonScheduler(0.8, 0.1, self.num_epochs, self.agent.policy)
 
         for epoch in range(self.num_epochs):
             state = pack_state(self.env.reset())
@@ -45,20 +74,26 @@ class Trainer:
 
                 next_state, reward, done = self.env.step(unpack_action(action))
                 next_state = pack_state(next_state)
+
+                if t < 200:
+                    state = next_state
+                    continue
+
                 epoch_r += reward
                 self.agent.replay_buffer.push((state, next_state, action, np.float32(reward), np.float32(done)))
 
                 state = next_state
-                
-                self.writer.send_update(self.env.get_state())
-                self.writer.add_scalar('sum_step_r', epoch_r, t)
+
+                print(f'\r>⏳ Epoch: {epoch:4d} | 🕹️ Action: {action[0]:> 3.1f} | 🎯 Reward: {reward:8.2f} | 🏆 Total: {epoch_r:8.2f}<', end='', flush=True)
+
                 if done or t >= self.max_steps_per_epoch:
                     self.writer.add_scalar('epoch_r', epoch_r, epoch)
                     if epoch % print_interval == 0:
-                        print(f'Train Epoch: {epoch}, Reward: {epoch_r:0.2f}, Step:{t}')
-                    epoch_r = 0
-                    break
+                        print(f'\r✅ Epoch: {epoch:4d} | 🏆 Total: {epoch_r:8.2f} | 📈 Steps: {t:4d} ' + ' '*40)
+                        epoch_r = 0
+                        break
 
+            scheduler.step()
             if (epoch + 1) % save_interval == 0:
                 self.agent.save()
 

@@ -302,7 +302,7 @@ class MatchmanEnv():
             self.space.debug_draw(self.draw_options)
             pygame.display.flip()
             self.clock.tick(6000)
-        self.space.step(1/60)
+        self.space.step(1/30)
 
         set_motor_rates(self.motors, action)
 
