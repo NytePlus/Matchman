@@ -4,13 +4,13 @@ from tensorboardX import SummaryWriter
 from threading import Thread
 
 from src.reward import stand_reward
-from src.trainer import Trainer, MultiTargetWriter
+from src.trainer import MultiTargetWriter
 from algorithms.PPO import PPO
 from src.env import *
 
-state_size, action_size, hidden_size = 9 * 9, 9, (400, 300)
-lr, batch_size = 0.001, 64
-num_epochs, max_steps_per_epoch = 100000, 2000
+hidden_size = (400, 300)
+lr, batch_size = 0.0001, 64
+total_steps, max_steps_per_round, num_epochs = 100000, 2000, 10
 device = 'cpu'
 tensorboard_host, tensorboard_port = '127.0.0.1', '6006'
 
@@ -56,11 +56,24 @@ class TensorboardDaemon(Thread):
 
 if __name__ == "__main__":
     args = parse_arguments()
-    agent = PPO(state_size, action_size, [lr, 0.01], batch_size, hidden_size, device)
-    env = MatchmanEnv([stand_reward], args.draw)
-    
+    # env = MatchmanEnv([stand_reward], args.draw)
+    env = gym.make("BipedalWalker-v3")
+    test_env = gym.make("BipedalWalker-v3", render_mode="human")
     writer = MultiTargetWriter([SummaryWriter('logs/' + 'ppo3')])
-    trainer = Trainer(env, agent, writer, num_epochs, max_steps_per_epoch)
+    agent = PPO(
+        writer,
+        env,
+        test_env,
+        [lr, lr], 
+        batch_size, 
+        hidden_size, 
+        device, 
+        total_steps = total_steps,
+        max_steps_per_round = max_steps_per_round,
+        num_epochs=num_epochs,
+        norm_advantage=True,
+        clip_range_vf=None
+    )
 
     TensorboardDaemon(agent.workspace + 'logs', args.tensorboard).start()
-    trainer.train(print_interval=1)
+    agent.train(print_rollout=False, test_interval = 20)

@@ -16,13 +16,13 @@ class MultiTargetWriter:
             else:
                 raise ValueError(f'{target} has no add_scalar')
             
-    def send_update(self, data):
-        _, data = data
-        for target in self.targets:
-            if hasattr(target, 'send_update'):
-                target.send_update(data)
-            else:
-                pass
+    def __getattr__(self, name):
+        def method(*args, **kwargs):
+            for target in self.targets:
+                if hasattr(target, name):
+                    method_to_call = getattr(target, name)
+                    method_to_call(*args, **kwargs)
+        return method
 
 class EpsilonScheduler:
     def __init__(self, start_epsilon, end_epsilon, decay_epochs, model, decay_type='linear'):
@@ -68,14 +68,13 @@ class Trainer:
         for epoch in range(self.num_epochs):
             state, _ = self.env.reset()
             for t in count():
-                action = self.agent.select_action(state)
+                action, value, log_prob = self.agent.select_action(state) # log_prob和value既可以更新时利用ref模型重新计算，也可以
 
                 next_state, reward, done, _, _ = self.env.step(action)
                 epoch_r += reward
                 self.agent.replay_buffer.push((state, next_state, action, np.float32(reward), np.float32(done)))
 
                 state = next_state
-
                 print(f'\r>⏳ Epoch: {epoch:4d} | 🕹️ Action: {action[0]:> 3.1f} | 🎯 Reward: {reward:8.2f} | 🏆 Total: {epoch_r:8.2f}<', end='', flush=True)
 
                 if done or t >= self.max_steps_per_epoch:

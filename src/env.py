@@ -12,10 +12,13 @@ GROUND_CATEGORY = 0b0010
 # --- env-network protocol ---
 def pack_state(state_dict : dict):
     state = []
+
+    def normalize(vec):
+        return [v.x / 1000, v.y / 500]
     for key, value in state_dict.items():
         for _, v in value.items():
             if isinstance(v, pymunk.Vec2d):
-                state.extend([v.x, v.y])
+                state.extend(normalize(v))
             else:
                 state.append(v)
     state = np.array(state)
@@ -285,11 +288,10 @@ class MatchmanEnv(gym.Env):
             dtype=np.float32
         )
         
-        obs_dim = 9 * 9
         self.observation_space = spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=(obs_dim,),
+            low=-5.0,
+            high=5.0,
+            shape=(9 * 9,),
             dtype=np.float32
         )
     
@@ -317,7 +319,7 @@ class MatchmanEnv(gym.Env):
         set_motor_rates(self.motors, unpack_action(action))
 
         next_state = get_joint_states(self.motors)
-        reward = sum([r(next_state) for r in self.rewards])
+        reward = np.array(sum([r(next_state) for r in self.rewards]))
         done = False
         return pack_state(next_state), reward, done, None, {}
     

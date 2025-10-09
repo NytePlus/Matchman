@@ -42,8 +42,44 @@ class Critic(nn.Module):
         x = torch.relu(self.l2(x))
         x = self.l3(x)
         return x
+    
+class ReplayBuffer():
+    def __init__(self, max_size = 5000):
+        self.storage = []
+        self.max_size = max_size
+        self.ptr = 0
 
-class DDPG(RLAlgorithm):
+    def clear(self):
+        self.storage = []
+
+    def push(self, data):
+        if len(self.storage) == self.max_size:
+            self.storage[int(self.ptr)] = data
+            self.ptr = (self.ptr + 1) % self.max_size
+        else:
+            self.storage.append(data)
+
+    def full(self):
+        return len(self.storage) == self.max_size
+
+    def sample(self, batch_size = -1):
+        if batch_size == -1:
+            ind = np.arange(0,len(self.storage))
+        else:
+            ind = np.random.randint(0,len(self.storage),size=batch_size).sort()
+        x, y, u, r, d = [],[],[],[],[]
+
+        for i in ind:
+            X, Y, U, R, D = self.storage[i]
+            x.append(X)
+            y.append(Y)
+            u.append(U)
+            r.append(R)
+            d.append(D)
+
+        return np.array(x), np.array(y), np.array(u), np.array(r), np.array(d)
+
+class DDPG():
     def __init__(self, state_size, action_size, lr, batch_size, hidden_size, device, update_iteration = 10, noise = 0.1, tau = 0.005, gamma = 0.99):
         super().__init__()
 
@@ -58,6 +94,8 @@ class DDPG(RLAlgorithm):
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr)
 
+        self.replay_buffer = ReplayBuffer()
+        
         self.workspace = './'
         self.critic_update_iter = 0
         self.actor_update_iter = 0
@@ -75,7 +113,7 @@ class DDPG(RLAlgorithm):
         
         # 鼓励探索
         output = (output + np.random.normal(0, self.noise, size=output.shape[0])).clip(-1, 1) 
-        return output
+        return output, None, None
 
     def update(self):
         for it in range(self.update_iteration):
