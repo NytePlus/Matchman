@@ -3,6 +3,9 @@ import pygame
 import pymunk.pygame_util
 import numpy as np
 
+import gymnasium as gym
+from gymnasium import spaces
+
 MATCHMAN_CATEGORY = 0b0001
 GROUND_CATEGORY = 0b0010
 
@@ -265,20 +268,35 @@ def set_motor_rates(motors, rates):
         motors[name].rate = rate
 
 # --- env operation ---
-class MatchmanEnv():
+class MatchmanEnv(gym.Env):
     def __init__(self, rewards, draw = False):
+        super().__init__()
         self.rewards = rewards
-        self._running = False
-        self.space = None
         self.draw = draw
 
-        if draw:
-            pygame.init()
-            self.screen = pygame.display.set_mode((800, 600))
-            self.clock = pygame.time.Clock()
-            self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+        self._running = False
+        self.space = None
+        self.pygame_init = False
 
-    def reset(self):
+        self.action_space = spaces.Box(
+            low=-1.0,
+            high=1.0,
+            shape=(9,),
+            dtype=np.float32
+        )
+        
+        obs_dim = 9 * 9
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(obs_dim,),
+            dtype=np.float32
+        )
+    
+    def reset(self, seed=None, options=None):
+        assert seed == None, "seed should be None"
+        assert options == None, "options should be None"
+
         self._running = True
         self.space = pymunk.Space()
         self.space.gravity = (0, 200)
@@ -286,33 +304,43 @@ class MatchmanEnv():
         create_ground(self.space)
         self.motors, self.bodys = create_matchman(self.space, (400, 300))
 
-        return get_joint_states(self.motors)
+        return pack_state(get_joint_states(self.motors)), {}
 
     def running(self):
         return self._running
 
     def step(self, action):
         if self.draw:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self._running = False
-                    pygame.quit()
-                    return None, None, None
-            self.screen.fill((255, 255, 255))
-            self.space.debug_draw(self.draw_options)
-            pygame.display.flip()
-            self.clock.tick(6000)
+            self.render()
         self.space.step(1/60)
 
-        set_motor_rates(self.motors, action)
+        set_motor_rates(self.motors, unpack_action(action))
 
         next_state = get_joint_states(self.motors)
         reward = sum([r(next_state) for r in self.rewards])
         done = False
-        return next_state, reward, done
+        return pack_state(next_state), reward, done, None, {}
     
     def get_state(self):
         motor_state = get_joint_states(self.motors)
         body_state = get_body_states(self.bodys)
 
         return motor_state, body_state
+    
+    def render(self):
+        if not self.pygame_init:
+            pygame.init()
+            self.screen = pygame.display.set_mode((800, 600))
+            self.clock = pygame.time.Clock()
+            self.draw_options = pymunk.pygame_util.DrawOptions(self.screen)
+            self.pygame_init = True
+        
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self._running = False
+                pygame.quit()
+
+        self.screen.fill((255, 255, 255))
+        self.space.debug_draw(self.draw_options)
+        pygame.display.flip()
+        self.clock.tick(6000)

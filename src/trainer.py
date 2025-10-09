@@ -1,8 +1,6 @@
 import numpy as np
-import threading
 
 from itertools import count
-from src.env import pack_state, unpack_action
 
 # 如果我要拓展writer的写出，那么我就要在下一行新增一个写出 -> 无法在一行完成写出
 # 如果我要将两个合并为一个Writer，那么原本没有monitor的writer也要兼容Writer的接口，要么for循环writer要么for循环writer.write -> 无法在一行完成定义
@@ -39,12 +37,11 @@ class Trainer:
         epoch_r = 0
 
         for epoch in range(self.num_epochs):
-            state = pack_state(self.env.reset())
+            state, _ = self.env.reset()
             for t in count():
                 action = self.agent.select_action(state)
 
-                next_state, reward, done = self.env.step(unpack_action(action))
-                next_state = pack_state(next_state)
+                next_state, reward, done, _, _ = self.env.step(action)
                 epoch_r += reward
                 self.agent.replay_buffer.push((state, next_state, action, np.float32(reward), np.float32(done)))
 
@@ -72,13 +69,12 @@ class Trainer:
         epoch_r = 0
 
         for epoch in range(test_epochs):
-            state = pack_state(self.env.reset())
+            state, _ = self.env.reset()
             for t in count():
                 action = self.agent.select_action(state)
 
-                next_state, reward, done = self.env.step(unpack_action(action))
+                next_state, reward, done, _, _ = self.env.step(action)
 
-                next_state = pack_state(next_state)
                 epoch_r += reward
                 self.agent.replay_buffer.push((state, next_state, action, np.float32(reward), np.float32(done)))
 
