@@ -1,9 +1,10 @@
-import pymunk
 import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+
+from src.algorithms.base import RLAlgorithm, ReplayBuffer
 
 class WeightInitializer:
     def __init__(self, mean=0.0, std=0.1):
@@ -42,37 +43,7 @@ class Critic(nn.Module):
         x = self.l3(x)
         return x
 
-class ReplayBuffer():
-    def __init__(self, max_size = 5000):
-        self.storage = []
-        self.max_size = max_size
-        self.ptr = 0
-
-    def push(self, data):
-        if len(self.storage) == self.max_size:
-            self.storage[int(self.ptr)] = data
-            self.ptr = (self.ptr + 1) % self.max_size
-        else:
-            self.storage.append(data)
-
-    def full(self):
-        return len(self.storage) == self.max_size
-
-    def sample(self,batch_size):
-        ind = np.random.randint(0,len(self.storage),size=batch_size)
-        x, y, u, r, d = [],[],[],[],[]
-
-        for i in ind:
-            X, Y, U, R, D = self.storage[i]
-            x.append(X)
-            y.append(Y)
-            u.append(U)
-            r.append(R)
-            d.append(D)
-
-        return np.array(x), np.array(y), np.array(u), np.array(r),np.array(d)
-
-class DDPG():
+class DDPG(RLAlgorithm):
     def __init__(self, state_size, action_size, lr, batch_size, hidden_size, device, update_iteration = 10, noise = 0.1, tau = 0.005, gamma = 0.99):
         super().__init__()
 
@@ -87,7 +58,6 @@ class DDPG():
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = optim.Adam(self.critic.parameters(), lr)
 
-        self.replay_buffer = ReplayBuffer()
         self.workspace = './'
         self.critic_update_iter = 0
         self.actor_update_iter = 0
@@ -102,18 +72,15 @@ class DDPG():
     def select_action(self, state : np.array):
         inputs = torch.from_numpy(state).float().to(self.device)
         output = self.actor(inputs).cpu().data.numpy().flatten()
-
-        output = (output + np.random.normal(0, self.noise, size=output.shape[0])).clip(-1, 1)
+        
+        # 鼓励探索
+        output = (output + np.random.normal(0, self.noise, size=output.shape[0])).clip(-1, 1) 
         return output
 
     def update(self):
         for it in range(self.update_iteration):
-            x, y, u, r, d = self.replay_buffer.sample(self.batch_size)
-            state = torch.FloatTensor(x).to(self.device)
-            action = torch.FloatTensor(u).to(self.device)
-            next_state = torch.FloatTensor(y).to(self.device)
-            done = torch.FloatTensor(d).unsqueeze(1).to(self.device)
-            reward = torch.FloatTensor(r).unsqueeze(1).to(self.device)
+            items = self.replay_buffer.sample()
+            state, action, next_state, done, reward = [torch.FloatTensor(item).to(self.device) for item in items]
 
             target_Q = self.critic_target(next_state, self.actor_target(next_state))
             target_Q = reward + ((1 - done) * self.gamma * target_Q).detach()
