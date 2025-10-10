@@ -61,9 +61,9 @@ class ReturnAdvantageCalculator:
     def __init__(self, gamma):
         self.gamma = gamma
 
-    def MC(self, values, rewards): # (batch_size, 1)
+    def MC(self, values, rewards, dones, last_value): # (batch_size, 1)
         returns = []
-        G = 0
+        G = (1 - dones[-1]) * last_value
         for r in reversed(rewards):
             G = r + self.gamma * G
             returns.insert(0, G)
@@ -71,17 +71,19 @@ class ReturnAdvantageCalculator:
         advantages = returns - values
         return returns, advantages
 
-    def TD(self, values, rewards):
+    def TD(self, values, rewards, dones, last_value):
         next_values = np.zeros_like(values)
         next_values[:-1] = values[1:]
-        returns = rewards + self.gamma * next_values
+        next_values[-1] = last_value
+        returns = rewards + self.gamma * next_values * (1 - dones)
         advantages = returns - values
         return returns, advantages
 
-    def GAE(self, values, rewards):
+    def GAE(self, values, rewards, dones, last_value):
         self.lam = 0.1
         values = np.array(values).flatten()
         rewards = np.array(rewards).flatten()
+        dones = np.array(dones).flatten()
         
         n_steps = len(rewards)
         advantages = np.zeros(n_steps)
@@ -92,16 +94,15 @@ class ReturnAdvantageCalculator:
         # 反向计算GAE
         for t in reversed(range(n_steps)):
             if t == n_steps - 1:
-                # 最后一个状态
-                next_value = 0  # 如果终止，next_value=0
+                next_value = last_value * (1 - dones[t])
             else:
-                next_value = values[t + 1]
+                next_value = values[t + 1] * (1 - dones[t])
             
             # TD误差
             delta = rewards[t] + self.gamma * next_value - values[t]
             
             # GAE优势
-            advantages[t] = delta + self.gamma * self.lam * last_advantage
+            advantages[t] = delta + self.gamma * self.lam * (1 - dones[t]) * last_advantage
             last_advantage = advantages[t]
         
         returns = advantages + values
@@ -141,11 +142,11 @@ class RolloutBuffer():
             self.dones[self.pos] = np.array(done)
             self.pos += 1
 
-    def compute_returns_and_advantages(self, calculator):
+    def compute_returns_and_advantages(self, calculator, last_value):
         if self.start == self.pos:
             return
         indices = np.arange(self.start, self.pos)
-        returns, advantages = calculator(self.storage['values'][indices], self.rewards[indices])
+        returns, advantages = calculator(self.storage['values'][indices], self.rewards[indices], self.dones[indices], last_value)
 
         self.storage['advantages'][self.start: self.pos] = advantages
         self.storage['returns'][self.start: self.pos] = returns
@@ -179,10 +180,10 @@ class MatchmanPolicy(nn.Module):
 
         self.distribution = dist.Normal(mean, std)
     
-    def evaluate_action(self, state, action):
+    def evaluate_actions(self, state, action):
         self.proba_distribution(state)
         log_prob = self.distribution.log_prob(action).sum(dim=-1)
-        entropy = self.distribution.entropy().sum()
+        entropy = self.distribution.entropy().sum(dim=-1)
         return log_prob, entropy
     
     def get_noise(self):
@@ -259,13 +260,21 @@ class PPO():
         super().__init__()
         state_size = env.observation_space.shape[0]
         action_size = env.action_space.shape[0]
-        self.policy = MatchmanPolicy(state_size, hidden_size, action_size).to(device)
-        self.policy.apply(XavierInitializer())
-        self.policy_optimizer = optim.Adam(self.policy.parameters(), lrs[0])
+        # self.policy = MatchmanPolicy(state_size, hidden_size, action_size).to(device)
+        # self.policy.apply(XavierInitializer())
+        # self.policy_optimizer = optim.Adam(self.policy.parameters(), lrs[0], eps=1e-5)
 
-        self.value = Value(state_size, hidden_size).to(device)
-        self.value.apply(NormalInitializer(std=0.01))
-        self.value_optimizer = optim.Adam(self.value.parameters(), lrs[1])
+        # self.value = Value(state_size, hidden_size).to(device)
+        # self.value.apply(NormalInitializer(std=0.1))
+        # self.value_optimizer = optim.Adam(self.value.parameters(), lrs[1], eps=1e-5)
+
+        def lr_schedule(x):
+            return lrs[0]
+        from stable_baselines3.common.policies import ActorCriticPolicy
+        self.policy = ActorCriticPolicy(
+            env.observation_space, env.action_space, lr_schedule, use_sde=False, share_features_extractor=False
+        )
+        self.policy_optimizer = self.policy.optimizer
 
         self.workspace = './'
         self.num_training = 0
@@ -287,32 +296,41 @@ class PPO():
         self.gamma = gamma # 奖励累加的递减参数
         self.epsilon = epsilon # ppo裁剪项
 
-    def select_action(self, state : np.array):
+    def select_action(self, state : np.array, deterministic=False):
         with torch.no_grad():
-            state = torch.from_numpy(state).float().to(self.device)
-            action, log_prob = self.policy(state)
-            value = self.value(state)
+            state = torch.from_numpy(state).float().to(self.device).reshape(-1, state.shape[-1])
+            # action, log_prob = self.policy(state)
+            # value = self.value(state)
+            action, value, log_prob = self.policy(state, deterministic)
 
             return (
-                action.cpu().numpy(),
-                value.cpu().numpy(),
-                log_prob.cpu().numpy()
+                action.cpu().numpy().flatten(),
+                value.cpu().numpy().flatten(),
+                log_prob.cpu().numpy().flatten()
             )
 
     def update(self, test_interval=-1):
         for epoch in range(self.num_epochs):
-            all_policy_loss, all_value_loss, all_entropy = [], [], []
+            all_policy_loss, all_value_loss, all_entropy_loss = [], [], []
             for items in self.rollout_buffer.get(self.batch_size):
                 states, actions, old_values, old_log_probs, advantages, returns = [torch.FloatTensor(item).to(self.device) for item in items]
 
                 # 计算policy损失
-                log_probs, entropy = self.policy.evaluate_action(states, actions)
-                values = self.value(states)
-                print(f'[{values.abs().max().item(): .2f}, {log_probs.abs().max().item(): .2f}]', end=' ')
+                values, log_probs, entropy = self.policy.evaluate_actions(states, actions)
+                # values = self.value(states)
+                # log_prob的均值绝对值大于官方，方差小于官方
+                # print(f'[{log_probs.mean().item(): .2f}, {log_probs.std().item(): .2f}]', end=' ')
+                # print(f'{self.policy.log_std.data.mean().item(): .2f}, {self.policy.log_std.data.std(): .2f}', end=' ')
 
                 # 这里是乱序，计算优势只能在rollout的时候计算
                 if self.norm_advantage:
                     advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                
+                # 正优势比例集中在0.5左右最佳
+                # positive_ratio = (advantages > 0).float().mean().item()
+                # print(positive_ratio)
+                # 均值为0，方差为1，最大值不超过3.5，和官方一致
+                # print(f'{advantages.mean().item(): .2f}, {advantages.std(): .2f}, {advantages.abs().max(): .2f}', end=' ')
 
                 ratio = torch.exp(log_probs - old_log_probs)
                 policy_loss = - torch.min(ratio * advantages, torch.clip(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages).mean()
@@ -323,22 +341,24 @@ class PPO():
                 value_loss = F.mse_loss(returns, values).mean()
                 # print(f'[{returns.abs().max().item(): .2f}, {values.abs().max().item(): .2f}]', end=' ')
 
-                loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+                entropy_loss = - entropy.mean()
+
+                loss = policy_loss + 0.5 * value_loss + 0.0 * entropy_loss
 
                 self.policy_optimizer.zero_grad()
-                self.value_optimizer.zero_grad()
+                # self.value_optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
-                nn.utils.clip_grad_norm_(self.value.parameters(), max_norm=0.5)
+                # nn.utils.clip_grad_norm_(self.value.parameters(), max_norm=0.5)
                 self.policy_optimizer.step()
-                self.value_optimizer.step()
+                # self.value_optimizer.step()
 
                 all_policy_loss.append(policy_loss.item())
                 all_value_loss.append(value_loss.item())
-                all_entropy.append(0)# entropy.item())
+                all_entropy_loss.append(entropy_loss.item())
 
             self.epoch += 1
-            print(f'\r✅ Epoch: {self.epoch:4d} | Policy Loss: {np.mean(all_policy_loss):4.2f} | Value Loss: {np.mean(all_value_loss):4.2f} | Entropy Loss: {np.mean(all_entropy):4.2f}')
+            print(f'\r✅ Epoch: {self.epoch:4d} | Policy Loss: {np.mean(all_policy_loss):4.2f} | Value Loss: {np.mean(all_value_loss):4.2f} | Entropy Loss: {np.mean(all_entropy_loss):4.3f}')
             self.writer.add_scalar('Loss/policy_loss', np.mean(all_policy_loss), global_step = self.epoch)
             self.writer.add_scalar('Loss/value_loss', np.mean(all_value_loss), global_step = self.epoch)
 
@@ -375,14 +395,17 @@ class PPO():
                     print(f'\r>⏳ Round: {round:4d} | 🕹️ Action: {action[0]:> 3.1f} | 🎯 Reward: {reward:8.2f} | 🏆 Total: {epoch_r:8.2f}<', end='', flush=True)
 
                 self.num_steps += 1
-                if done or t >= self.max_steps_per_round:
+                if (done 
+                    or self.rollout_buffer.full() 
+                    or (self.max_steps_per_round != -1 and t >= self.max_steps_per_round)):
                     break
 
-            calc = ReturnAdvantageCalculator(self.gamma).GAE
-            self.rollout_buffer.compute_returns_and_advantages(calc)
+            calc = ReturnAdvantageCalculator(self.gamma).TD
+            _, last_value, _ = self.select_action(state) 
+            self.rollout_buffer.compute_returns_and_advantages(calc, last_value)
 
             if print_rollout:
-                print(f'\r📦 Round: {round:4d} | 🏆 Total: {epoch_r:8.2f} | 📈 Steps: {t:4d} ' + ' '*40)
+                print(f'\r📦 Round: {round:4d} | 🏆 Total: {epoch_r:8.2f} | 📈 Steps: {t:4d} | done {done}' + ' '*40)
                 
             if self.rollout_buffer.full():
                 return
@@ -396,18 +419,18 @@ class PPO():
             self.update(test_interval)
             self.rollout_buffer.clear()
 
-            self.save()
+            # self.save()
             # scheduler.step()
 
-    def test(self, test_round = 10):
+    def test(self, test_round = 10, max_test_steps_per_round = -1):
         for round in range(test_round):
             state, _ = self.test_env.reset()
             round_r = 0
             for t in count():
-                action, _, _ = self.select_action(state)
+                action, _, _ = self.select_action(state, deterministic=True)
                 state, reward, done, _, _ = self.test_env.step(action)
 
                 round_r += reward
-                if done or t >= self.max_steps_per_round:
+                if done or (max_test_steps_per_round != -1 and t >= max_test_steps_per_round):
                     break
             print(f'\r🔍 Test: {round:4d} | 🏆 Total: {round_r:8.2f} | 📈 Steps: {t:4d} ' + ' '*40)

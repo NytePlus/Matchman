@@ -10,7 +10,7 @@ from src.reward import stand_reward
 # env = MatchmanEnv([stand_reward], False)
 
 import gymnasium as gym
-env = gym.make("BipedalWalker-v3")
+env = gym.make("BipedalWalker-v3", render_mode="human")
 test_env = gym.make("BipedalWalker-v3", render_mode="human")
 
 model = PPO(

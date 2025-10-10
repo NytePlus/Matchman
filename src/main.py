@@ -9,8 +9,8 @@ from algorithms.PPO import PPO
 from src.env import *
 
 hidden_size = (400, 300)
-lr, batch_size = 0.0001, 64
-total_steps, max_steps_per_round, num_epochs = 100000, 2000, 10
+lr, batch_size = 0.0003, 64
+total_steps, max_steps_per_round, num_epochs = 100000, -1, 10
 device = 'cpu'
 tensorboard_host, tensorboard_port = '127.0.0.1', '6006'
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     writer = MultiTargetWriter([SummaryWriter('logs/' + 'ppo3')])
     agent = PPO(
         writer,
-        env,
+        test_env,
         test_env,
         [lr, lr], 
         batch_size, 
@@ -76,4 +76,5 @@ if __name__ == "__main__":
     )
 
     TensorboardDaemon(agent.workspace + 'logs', args.tensorboard).start()
-    agent.train(print_rollout=False, test_interval = 20)
+    agent.train(print_rollout=True, test_interval = -1)
+    agent.test(1, 3000)
