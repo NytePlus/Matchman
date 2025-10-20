@@ -27,34 +27,6 @@ class XavierInitializer:
             nn.init.xavier_uniform_(m.weight, gain=self.gain)
             nn.init.zeros_(m.bias)
 
-class EpsilonScheduler:
-    def __init__(self, start_epsilon, end_epsilon, decay_epochs, model, decay_type='linear'):
-        self.start_epsilon = start_epsilon
-        self.end_epsilon = end_epsilon
-        self.decay_epochs = decay_epochs
-        self.decay_type = decay_type
-
-        self.model = model
-        self.epoch = 0
-        self.model.epsilon = self.get_epsilon(self.epoch)
-        
-    def get_epsilon(self, epoch):
-        if epoch >= self.decay_epochs:
-            return self.end_epsilon
-        
-        if self.decay_type == 'linear':
-            progress = epoch / self.decay_epochs
-            return self.start_epsilon - (self.start_epsilon - self.end_epsilon) * progress
-        elif self.decay_type == 'exponential':
-            decay_factor = (self.end_epsilon / self.start_epsilon) ** (1 / self.decay_epochs)
-            return self.start_epsilon * (decay_factor ** epoch)
-        else:
-            raise ValueError(f"Unsupported decay type: {self.decay_type}")
-        
-    def step(self):
-        self.epoch += 1
-        self.model.epsilon = self.get_epsilon(self.epoch)
-
 # return = G_t, E(G_t) = V(s_t)
 # advantage = A_t = Q(s_t, a_t) - V(s_t) = G_t - V(s_t), E[G_t | s_t, a_t] = Q(s_t, a_t)
 class ReturnAdvantageCalculator:
@@ -79,8 +51,7 @@ class ReturnAdvantageCalculator:
         advantages = returns - values
         return returns, advantages
 
-    def GAE(self, values, rewards, dones, last_value):
-        self.lam = 0.1
+    def GAE(self, values, rewards, dones, last_value, lam = 0.95):
         values = np.array(values).flatten()
         rewards = np.array(rewards).flatten()
         dones = np.array(dones).flatten()
@@ -102,7 +73,7 @@ class ReturnAdvantageCalculator:
             delta = rewards[t] + self.gamma * next_value - values[t]
             
             # GAE优势
-            advantages[t] = delta + self.gamma * self.lam * (1 - dones[t]) * last_advantage
+            advantages[t] = delta + self.gamma * lam * (1 - dones[t]) * last_advantage
             last_advantage = advantages[t]
         
         returns = advantages + values
@@ -165,17 +136,15 @@ class MatchmanPolicy(nn.Module):
         self.l2 = nn.Linear(hidden_size[0], hidden_size[1])
         self.l_mean = nn.Linear(hidden_size[1], output_size)
 
-        # self.l_std = nn.Linear(hidden_size[1], output_size)
+        # 基线做法，方差是一组可学习的参数
         self.log_std = nn.Parameter(torch.ones(output_size) * log_std_init, requires_grad=True)
         self.scale = scale
-        self.noise_dist = dist.Normal(0, torch.ones(output_size) * 0.1)
 
     def proba_distribution(self, state):
         x = torch.tanh(self.l1(state))
         x = torch.tanh(self.l2(x))
         mean = self.l_mean(x)
 
-        # std = torch.exp(self.l_std(x)).clamp(max=1.0)
         std = torch.ones_like(mean) * self.log_std.exp() # 保持在N(1e-1, 1.0)左右最佳
 
         self.distribution = dist.Normal(mean, std)
@@ -185,9 +154,6 @@ class MatchmanPolicy(nn.Module):
         log_prob = self.distribution.log_prob(action).sum(dim=-1)
         entropy = self.distribution.entropy().sum(dim=-1)
         return log_prob, entropy
-    
-    def get_noise(self):
-        return self.noise_dist.sample()
 
     def forward(self, state):
         self.proba_distribution(state)
@@ -255,18 +221,33 @@ class Value(nn.Module):
         x = torch.tanh(self.l2(x))
         return self.l3(x).reshape(-1, 1)
 
+class PolicyWithValue(nn.Module):
+    def __init__(self, value, policy, lr):
+        self.value = value
+        self.policy = policy
+
+        self.policy.apply(XavierInitializer())
+        self.value.apply(NormalInitializer(std=0.1))
+
+        self.optimizer = optim.Adam(self.parameters(), lr, eps=1e-5)
+    
+    def forward(self, state, deterministic):
+        action, log_prob = self.policy(state, deterministic)
+        value = self.value(state)
+        return value, log_prob, action
+    
+    def evaluate_actions(self, states, actions):
+        # TODO
+        # return values, log_probs, entropy
+        pass
+
 class PPO():
-    def __init__(self, writer, env, test_env, lrs, batch_size, hidden_size, device, clip_range_vf = 1.0, norm_advantage = False, total_steps = 10000, max_steps_per_round=2000, num_epochs = 10, gamma = 0.99, epsilon = 0.1):
+    def __init__(self, writer, env, test_env, lrs, batch_size, hidden_size, device, clip_range_vf = 1.0, norm_advantage = False, max_steps_per_round=2000, num_epochs = 10, gamma = 0.99, epsilon = 0.1):
         super().__init__()
         state_size = env.observation_space.shape[0]
         action_size = env.action_space.shape[0]
         # self.policy = MatchmanPolicy(state_size, hidden_size, action_size).to(device)
-        # self.policy.apply(XavierInitializer())
-        # self.policy_optimizer = optim.Adam(self.policy.parameters(), lrs[0], eps=1e-5)
-
         # self.value = Value(state_size, hidden_size).to(device)
-        # self.value.apply(NormalInitializer(std=0.1))
-        # self.value_optimizer = optim.Adam(self.value.parameters(), lrs[1], eps=1e-5)
 
         def lr_schedule(x):
             return lrs[0]
@@ -274,12 +255,13 @@ class PPO():
         self.policy = ActorCriticPolicy(
             env.observation_space, env.action_space, lr_schedule, use_sde=False, share_features_extractor=False
         )
-        self.policy_optimizer = self.policy.optimizer
+        self.optimizer = self.policy.optimizer
 
         self.workspace = './'
         self.num_training = 0
         self.num_steps = 0
         self.epoch = 0
+        self.best_reward = -1e10
 
         self.writer = writer
         self.env = env
@@ -288,7 +270,6 @@ class PPO():
 
         self.device = device
         self.batch_size = batch_size
-        self.total_steps = total_steps
         self.max_steps_per_round = max_steps_per_round
         self.num_epochs = num_epochs
         self.clip_range_vf = clip_range_vf
@@ -299,8 +280,6 @@ class PPO():
     def select_action(self, state : np.array, deterministic=False):
         with torch.no_grad():
             state = torch.from_numpy(state).float().to(self.device).reshape(-1, state.shape[-1])
-            # action, log_prob = self.policy(state)
-            # value = self.value(state)
             action, value, log_prob = self.policy(state, deterministic)
 
             return (
@@ -315,9 +294,9 @@ class PPO():
             for items in self.rollout_buffer.get(self.batch_size):
                 states, actions, old_values, old_log_probs, advantages, returns = [torch.FloatTensor(item).to(self.device) for item in items]
 
-                # 计算policy损失
+                # 1. 计算policy损失
                 values, log_probs, entropy = self.policy.evaluate_actions(states, actions)
-                # values = self.value(states)
+
                 # log_prob的均值绝对值大于官方，方差小于官方
                 # print(f'[{log_probs.mean().item(): .2f}, {log_probs.std().item(): .2f}]', end=' ')
                 # print(f'{self.policy.log_std.data.mean().item(): .2f}, {self.policy.log_std.data.std(): .2f}', end=' ')
@@ -332,26 +311,23 @@ class PPO():
                 # 均值为0，方差为1，最大值不超过3.5，和官方一致
                 # print(f'{advantages.mean().item(): .2f}, {advantages.std(): .2f}, {advantages.abs().max(): .2f}', end=' ')
 
-                ratio = torch.exp(log_probs - old_log_probs)
+                ratio = torch.exp(log_probs.reshape(-1, 1) - old_log_probs)
                 policy_loss = - torch.min(ratio * advantages, torch.clip(ratio, 1 - self.epsilon, 1 + self.epsilon) * advantages).mean()
 
-                # 计算value损失
+                # 2. 计算value损失
                 if self.clip_range_vf is not None:
                     values = old_values + torch.clip(values - old_values, -self.clip_range_vf, self.clip_range_vf)
                 value_loss = F.mse_loss(returns, values).mean()
-                # print(f'[{returns.abs().max().item(): .2f}, {values.abs().max().item(): .2f}]', end=' ')
 
+                # 3. 计算熵损失
                 entropy_loss = - entropy.mean()
 
                 loss = policy_loss + 0.5 * value_loss + 0.0 * entropy_loss
 
-                self.policy_optimizer.zero_grad()
-                # self.value_optimizer.zero_grad()
+                self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=0.5)
-                # nn.utils.clip_grad_norm_(self.value.parameters(), max_norm=0.5)
-                self.policy_optimizer.step()
-                # self.value_optimizer.step()
+                self.optimizer.step()
 
                 all_policy_loss.append(policy_loss.item())
                 all_value_loss.append(value_loss.item())
@@ -367,21 +343,21 @@ class PPO():
 
     def save(self):
         torch.save(self.policy.state_dict(), self.workspace + 'ckpt/policy.pth')
-        torch.save(self.value.state_dict(), self.workspace + 'ckpt/value.pth')
 
     def load(self):
         self.policy.load_state_dict(torch.load(self.workspace + 'ckpt/policy.pth'))
-        self.value.load_state_dict(torch.load(self.workspace + 'ckpt/value.pth'))
 
     def collect_rollout(self, print_rollout = True):
         for round in count():
             epoch_r = 0
             state, _ = self.env.reset()
             for t in count():
-                action, value, log_prob = self.select_action(state) 
+                action, value, log_prob = self.select_action(state)
                 # log_prob和value既可以更新时利用ref模型重新计算，也可以存下来
-                action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
+
                 # state控制在1.0附近最佳，action均匀分布(0, 3）最佳
+                # 但如果在这里裁剪，可能会影响ratio的计算，梯度会经过裁剪
+                # action = np.clip(action, self.env.action_space.low[0], self.env.action_space.high[0])
 
                 next_state, reward, done, _, _ = self.env.step(action)
 
@@ -400,7 +376,7 @@ class PPO():
                     or (self.max_steps_per_round != -1 and t >= self.max_steps_per_round)):
                     break
 
-            calc = ReturnAdvantageCalculator(self.gamma).TD
+            calc = ReturnAdvantageCalculator(self.gamma).GAE
             _, last_value, _ = self.select_action(state) 
             self.rollout_buffer.compute_returns_and_advantages(calc, last_value)
 
@@ -410,19 +386,14 @@ class PPO():
             if self.rollout_buffer.full():
                 return
 
-    def train(self, print_rollout = True, test_interval = -1):
-        # scheduler = EpsilonScheduler(0.8, 0.1, self.total_steps / self.rollout_buffer.max_size, self.policy)
-
-        while self.num_steps < self.total_steps:
+    def train(self, total_steps, print_rollout = True, test_interval = -1):
+        while self.num_steps < total_steps:
             self.collect_rollout(print_rollout)
 
             self.update(test_interval)
             self.rollout_buffer.clear()
 
-            # self.save()
-            # scheduler.step()
-
-    def test(self, test_round = 10, max_test_steps_per_round = -1):
+    def test(self, test_round = 10, max_test_steps_per_round = 2000):
         for round in range(test_round):
             state, _ = self.test_env.reset()
             round_r = 0
@@ -434,3 +405,7 @@ class PPO():
                 if done or (max_test_steps_per_round != -1 and t >= max_test_steps_per_round):
                     break
             print(f'\r🔍 Test: {round:4d} | 🏆 Total: {round_r:8.2f} | 📈 Steps: {t:4d} ' + ' '*40)
+
+            if round_r > self.best_reward:
+                self.save()
+                self.best_reward = round_r

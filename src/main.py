@@ -4,9 +4,9 @@ from tensorboardX import SummaryWriter
 from threading import Thread
 
 from src.reward import stand_reward
-from src.trainer import MultiTargetWriter
+from utils import MultiTargetWriter
 from algorithms.PPO import PPO
-from src.env import *
+from env.pymunk import *
 
 hidden_size = (400, 300)
 lr, batch_size = 0.0003, 64
@@ -32,15 +32,12 @@ def parse_arguments():
     return parser.parse_args()
 
 class TensorboardDaemon(Thread):
-    def __init__(self, log_dir, lanch = True):
+    def __init__(self, log_dir):
         super().__init__()
         self.log_dir = log_dir
         self.daemon = True
-        self.lanch = lanch
     
     def run(self):
-        if not self.lanch:
-            return
         from tensorboard import program
         
         tb = program.TensorBoard()
@@ -62,19 +59,21 @@ if __name__ == "__main__":
     writer = MultiTargetWriter([SummaryWriter('logs/' + 'ppo3')])
     agent = PPO(
         writer,
-        test_env,
+        env,
         test_env,
         [lr, lr], 
         batch_size, 
         hidden_size, 
-        device, 
-        total_steps = total_steps,
+        device,
         max_steps_per_round = max_steps_per_round,
         num_epochs=num_epochs,
         norm_advantage=True,
         clip_range_vf=None
     )
 
-    TensorboardDaemon(agent.workspace + 'logs', args.tensorboard).start()
-    agent.train(print_rollout=True, test_interval = -1)
-    agent.test(1, 3000)
+    if args.tensorboard:
+        TensorboardDaemon(agent.workspace + 'logs').start()
+    agent.train(total_steps, print_rollout=False, test_interval = 100)
+
+    agent.load()
+    agent.test(1)

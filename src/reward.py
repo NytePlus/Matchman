@@ -46,3 +46,24 @@ def stand_reward_strong(state):
         return 5.0
     else:
         return 0.1
+    
+def stand_reward_box2d(state, action):
+    SCALE = 0.1
+    
+    shaping = (
+        13 * (1 - state['torso']['pos'][1])
+    )  # moving forward is a way to receive reward (normalized to get 300 on completion)
+    shaping -= 0.5 * abs(
+        state['torso']['angle']
+    )  # keep head straight, other than that and falling, any behavior is unpunished
+
+    return shaping
+
+def action_penalty(state, action):
+    import numpy as np
+    reward = 0
+    for a in action.values():
+        reward -= 0.00035 * 80.0 * np.clip(np.abs(a), 0, 1)
+    # normalized to about 50.0 using heuristic, more optimal agent should spend less
+
+    return reward

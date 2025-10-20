@@ -43,12 +43,15 @@ docker run matchman-backend:latest
 ```
 
 ### Build with Pip
+> 只在macos上测试
 ```bash
 git clone https://github.com/NytePlus/Matchman.git
 cd Matchman
 
 conda create -n matchman python=3.13
 conda activate matchman
+
+brew install swig
 
 conda install pip
 pip install -r requirements.txt

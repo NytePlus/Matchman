@@ -7,7 +7,7 @@ from threading import Lock, Thread
 
 from src.deploy.repository import TensorboardRepository
 from src.main import *
-from src.trainer import Trainer, MultiTargetWriter
+from utils import Trainer, MultiTargetWriter
 
 name = 'test'
 

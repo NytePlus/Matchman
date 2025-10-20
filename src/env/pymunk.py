@@ -6,9 +6,6 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-MATCHMAN_CATEGORY = 0b0001
-GROUND_CATEGORY = 0b0010
-
 # --- env-network protocol ---
 def pack_state(state_dict : dict):
     state = []
@@ -38,19 +35,35 @@ def unpack_action(action : np.array):
     }
     return action_dict
 
+# --- env constant ---
+MATCHMAN_CATEGORY = 0b0001
+GROUND_CATEGORY = 0b0010
+
+# 髋关节
+HIP_MIN = np.deg2rad(-100)  # -100度 (向前伸展)
+HIP_MAX = np.deg2rad(70)   # +70度 (向后弯曲)
+
+# 膝关节
+KNEE_MIN = np.deg2rad(-170)   # 伸直
+KNEE_MAX = np.deg2rad(170) # 最大弯曲角度
+
+# 头部
+HEAD_MIN = np.deg2rad(-50)
+HEAD_MAX = np.deg2rad(50)
+
 # --- env initialization ---
 def create_ground(space):
-    ground = pymunk.Segment(space.static_body, (-100, 500), (1000, 500), 5)
+    ground = pymunk.Segment(space.static_body, (-100, 500), (1000, 500), 10)
     ground.friction = 1.0
     ground.filter = pymunk.ShapeFilter(categories=GROUND_CATEGORY, mask=MATCHMAN_CATEGORY)
     space.add(ground)
 
-    left_wall = pymunk.Segment(space.static_body, (0, 500), (0, -500), 5)
+    left_wall = pymunk.Segment(space.static_body, (0, 500), (0, -500), 10)
     left_wall.friction = 1.0
     left_wall.filter = pymunk.ShapeFilter(categories=GROUND_CATEGORY, mask=MATCHMAN_CATEGORY)
     space.add(left_wall)
 
-    right_wall = pymunk.Segment(space.static_body, (800, 500), (800, -500), 5)
+    right_wall = pymunk.Segment(space.static_body, (800, 500), (800, -500), 10)
     right_wall.friction = 1.0
     right_wall.filter = pymunk.ShapeFilter(categories=GROUND_CATEGORY, mask=MATCHMAN_CATEGORY)
     space.add(right_wall)
@@ -67,6 +80,8 @@ def create_segment(space, pos, mass, a, b, fric=0.7, radius=3):
     return body
 
 def create_matchman(space, pos):
+    joints, motors = dict(), dict()
+
     # 躯干
     torso_size = 50
     torso_body = create_segment(space, pos, 1, (0, torso_size / 2), (0, -torso_size / 2))
@@ -83,100 +98,69 @@ def create_matchman(space, pos):
     space.add(head_body, head_shape)
 
     # 连接头部和躯干
-    head_joint = pymunk.PinJoint(torso_body, head_body, (0, -torso_size / 2), (0, 15))
-    space.add(head_joint)
-
-    # 控制头部旋转
-    head_motor = pymunk.SimpleMotor(torso_body, head_body, 0)  # 初始角速度为 0
-    space.add(head_motor)
+    joints["head_pin"] = pymunk.PinJoint(torso_body, head_body, (0, -torso_size / 2), (0, 15))
+    joints["head_limit"] = pymunk.RotaryLimitJoint(torso_body, head_body, HEAD_MIN, HEAD_MAX)
+    motors["head"] = pymunk.SimpleMotor(torso_body, head_body, 0)  # 初始角速度为 0
 
     # 左大臂
     left_arm_body = create_segment(space, (pos[0] - 7, pos[1] - torso_size / 2 - 7), 0.3, (7, 7), (-7, -7))
 
     # 连接左大臂和躯干
-    left_arm_joint = pymunk.PinJoint(torso_body, left_arm_body, (0, -torso_size / 2), (7, 7))
-    space.add(left_arm_joint)
-
-    # 控制左大臂旋转
-    left_arm_motor = pymunk.SimpleMotor(torso_body, left_arm_body, 0)
-    space.add(left_arm_motor)
+    joints["left_arm_pin"] = pymunk.PinJoint(torso_body, left_arm_body, (0, -torso_size / 2), (7, 7))
+    motors["left_arm"] = pymunk.SimpleMotor(torso_body, left_arm_body, 0)
 
     # 左小臂
     left_forearm_body = create_segment(space, (pos[0] - 21, pos[1] - torso_size / 2 - 21), 0.3, (7, 7), (-7, -7))
 
     # 连接左小臂和左大臂
-    left_forearm_joint = pymunk.PinJoint(left_arm_body, left_forearm_body, (- 7, - 7), (7, 7))
-    space.add(left_forearm_joint)
-
-    # 控制左小臂旋转
-    left_forearm_motor = pymunk.SimpleMotor(left_arm_body, left_forearm_body, 0)
-    space.add(left_forearm_motor)
+    joints["left_forearm_pin"] = pymunk.PinJoint(left_arm_body, left_forearm_body, (- 7, - 7), (7, 7))
+    motors["left_forearm"] = pymunk.SimpleMotor(left_arm_body, left_forearm_body, 0)
 
     # 右大臂
     right_arm_body = create_segment(space, (pos[0] + 7, pos[1] - torso_size / 2 - 7), 0.3, (7, -7), (-7, 7))
 
     # 连接右大臂和躯干
-    right_arm_joint = pymunk.PinJoint(torso_body, right_arm_body, (0, -torso_size / 2), (-7, 7))
-    space.add(right_arm_joint)
-
-    # 控制右大臂旋转
-    right_arm_motor = pymunk.SimpleMotor(torso_body, right_arm_body, 0)
-    space.add(right_arm_motor)
+    joints["right_arm_pin"] = pymunk.PinJoint(torso_body, right_arm_body, (0, -torso_size / 2), (-7, 7))
+    motors["right_arm"] = pymunk.SimpleMotor(torso_body, right_arm_body, 0)
 
     # 右小臂
     right_forearm_body = create_segment(space, (pos[0] + 21, pos[1] - torso_size / 2 - 21), 0.3, (7, -7), (-7, 7))
 
     # 连接右小臂和右大臂
-    right_forearm_joint = pymunk.PinJoint(right_arm_body, right_forearm_body, (7, - 7), (-7, 7))
-    space.add(right_forearm_joint)
-
-    # 控制右小臂旋转
-    right_forearm_motor = pymunk.SimpleMotor(right_arm_body, right_forearm_body, 0)
-    space.add(right_forearm_motor)
+    joints["right_forearm_pin"] = pymunk.PinJoint(right_arm_body, right_forearm_body, (7, - 7), (-7, 7))
+    motors["right_forearm"] = pymunk.SimpleMotor(right_arm_body, right_forearm_body, 0)
 
     # 左大腿
     left_leg_body = create_segment(space, (pos[0] - 7, pos[1] + torso_size / 2 + 14), 0.5, (7, -14), (-7, 14))
 
     # 连接左大腿和躯干
-    left_leg_joint = pymunk.PinJoint(torso_body, left_leg_body, (0, torso_size / 2), (7, -14))
-    space.add(left_leg_joint)
-
-    # 控制左大腿旋转
-    left_leg_motor = pymunk.SimpleMotor(torso_body, left_leg_body, 0)
-    space.add(left_leg_motor)
+    joints["left_leg_pin"] = pymunk.PinJoint(torso_body, left_leg_body, (0, torso_size / 2), (7, -14))
+    joints["left_leg_limit"] = pymunk.RotaryLimitJoint(torso_body, left_leg_body, HIP_MIN, HIP_MAX)
+    motors["left_leg"] = pymunk.SimpleMotor(torso_body, left_leg_body, 0)
 
     # 左小腿
     left_foreleg_body = create_segment(space, (pos[0] - 21, pos[1] + torso_size / 2 + 42), 0.5, (7, -14), (-7, 14))
 
     # 连接左小腿和左大腿
-    left_foreleg_joint = pymunk.PinJoint(left_leg_body, left_foreleg_body, (-7, 14), (7, -14))
-    space.add(left_foreleg_joint)
-
-    # 控制左小腿旋转
-    left_foreleg_motor = pymunk.SimpleMotor(left_leg_body, left_foreleg_body, 0)
-    space.add(left_foreleg_motor)
+    joints["left_foreleg_pin"] = pymunk.PinJoint(left_leg_body, left_foreleg_body, (-7, 14), (7, -14))
+    joints["left_foreleg_limit"] = pymunk.RotaryLimitJoint(left_leg_body, left_foreleg_body, KNEE_MIN, KNEE_MAX)
+    motors["left_foreleg"] = pymunk.SimpleMotor(left_leg_body, left_foreleg_body, 0)
 
     # 右大腿
     right_leg_body = create_segment(space, (pos[0] + 7, pos[1] + torso_size / 2 + 14), 0.5, (7, 14), (-7, -14))
 
     # 连接右大腿和躯干
-    right_leg_joint = pymunk.PinJoint(torso_body, right_leg_body, (0, torso_size / 2), (-7, -14))
-    space.add(right_leg_joint)
-
-    # 控制右大腿旋转
-    right_leg_motor = pymunk.SimpleMotor(torso_body, right_leg_body, 0)
-    space.add(right_leg_motor)
+    joints["right_leg_pin"] = pymunk.PinJoint(torso_body, right_leg_body, (0, torso_size / 2), (-7, -14))
+    joints["right_leg_limit"] = pymunk.RotaryLimitJoint(torso_body, right_leg_body, -HIP_MIN, -HIP_MAX)
+    motors["right_leg"] = pymunk.SimpleMotor(torso_body, right_leg_body, 0)
 
     # 右小腿
     right_foreleg_body = create_segment(space, (pos[0] + 21, pos[1] + torso_size / 2 + 42), 0.5, (7, 14), (-7, -14))
 
     # 连接右小腿和右大腿
-    right_foreleg_joint = pymunk.PinJoint(right_leg_body, right_foreleg_body, (7, 14), (-7, -14))
-    space.add(right_foreleg_joint)
-
-    # 控制右小腿旋转
-    right_foreleg_motor = pymunk.SimpleMotor(right_leg_body, right_foreleg_body, 0)
-    space.add(right_foreleg_motor)
+    joints["right_foreleg_pin"] = pymunk.PinJoint(right_leg_body, right_foreleg_body, (7, 14), (-7, -14))
+    joints["right_foreleg_limit"] = pymunk.RotaryLimitJoint(right_leg_body, right_foreleg_body, -KNEE_MIN, -KNEE_MAX)
+    motors["right_foreleg"] = pymunk.SimpleMotor(right_leg_body, right_foreleg_body, 0)
 
     bodys = {
         "torso": torso_body,
@@ -191,17 +175,11 @@ def create_matchman(space, pos):
         "right_foreleg": right_foreleg_body,
     }
 
-    motors = {
-        "head": head_motor,
-        "left_arm": left_arm_motor,
-        "left_forearm": left_forearm_motor,
-        "right_arm": right_arm_motor,
-        "right_forearm": right_forearm_motor,
-        "left_leg": left_leg_motor,
-        "left_foreleg": left_foreleg_motor,
-        "right_leg": right_leg_motor,
-        "right_foreleg": right_foreleg_motor,
-    }
+    for motor in motors.values():
+        space.add(motor)
+    for joint in joints.values():
+        space.add(joint)
+        
     return motors, bodys
 
 # -- env runtime ---
@@ -301,6 +279,7 @@ class MatchmanEnv(gym.Env):
 
         self._running = True
         self.space = pymunk.Space()
+        self.space.iterations = 20
         self.space.gravity = (0, 200)
 
         create_ground(self.space)
@@ -312,9 +291,10 @@ class MatchmanEnv(gym.Env):
         return self._running
 
     def step(self, action):
+        action = action.clip(self.action_space.low, self.action_space.high)
         if self.draw:
             self.render()
-        self.space.step(1/60)
+        self.space.step(1/120)
 
         set_motor_rates(self.motors, unpack_action(action))
 
